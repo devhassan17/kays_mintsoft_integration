@@ -27,7 +27,6 @@
         <field name="name">Inventory Settings</field>
         <field name="res_model">res.config.settings</field>
         <field name="view_mode">form</field>
-        <field name="target">inline</field>
         <field name="context">{'module': 'kays_mintsoft_integration', 'bin_size': False}</field>
     </record>
 
