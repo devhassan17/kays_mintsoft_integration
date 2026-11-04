@@ -58,6 +58,7 @@
                     <field name="connection_status" widget="statusbar" statusbar_visible="untested,connected,partial,failed,disabled"/>
                 </header>
                 <sheet>
+                    <field name="api_key_expiry_warning" invisible="1"/>
                     <div class="alert alert-warning" role="alert" invisible="not api_key_expiry_warning">
                         <strong>API Key Expiration Warning:</strong> The configured Mintsoft API Key is approaching or past its expiration date (<field name="api_key_expiry_date" readonly="1"/>). Please rotate credentials promptly.
                     </div>

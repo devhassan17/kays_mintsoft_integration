@@ -135,7 +135,7 @@
                 <filter string="Unknown Outcome" name="filter_unknown" domain="[('state', '=', 'unknown_outcome')]"/>
                 <filter string="Failed / Dead-Letter" name="filter_failed" domain="[('state', 'in', ('failed', 'dead_letter'))]"/>
                 <filter string="Completed" name="filter_completed" domain="[('state', '=', 'completed')]"/>
-                <group expand="0" string="Group By">
+                <group>
                     <filter string="Job Type" name="group_type" context="{'group_by': 'job_type'}"/>
                     <filter string="Status" name="group_state" context="{'group_by': 'state'}"/>
                     <filter string="Error Classification" name="group_error" context="{'group_by': 'error_classification'}"/>
@@ -347,7 +347,7 @@
                 <separator/>
                 <filter string="Operational Logs" name="filter_operational" domain="[('is_debug', '=', False)]"/>
                 <filter string="Debug Logs" name="filter_debug" domain="[('is_debug', '=', True)]"/>
-                <group expand="0" string="Group By">
+                <group>
                     <filter string="Outcome" name="group_status" context="{'group_by': 'status'}"/>
                     <filter string="Operation" name="group_op" context="{'group_by': 'operation'}"/>
                     <filter string="HTTP Status" name="group_http" context="{'group_by': 'http_status'}"/>
@@ -482,7 +482,7 @@
                 <filter string="Queued / Processing" name="filter_queued" domain="[('state', 'in', ('received', 'queued', 'processing'))]"/>
                 <filter string="Processed" name="filter_processed" domain="[('state', '=', 'processed')]"/>
                 <filter string="Duplicates" name="filter_duplicate" domain="[('state', '=', 'duplicate')]"/>
-                <group expand="0" string="Group By">
+                <group>
                     <filter string="Event Type" name="group_type" context="{'group_by': 'event_type'}"/>
                     <filter string="Status" name="group_state" context="{'group_by': 'state'}"/>
                     <filter string="Connection" name="group_instance" context="{'group_by': 'instance_id'}"/>

@@ -121,7 +121,8 @@
                             <field name="name"/>
                             <field name="mintsoft_order_id"/>
                             <field name="is_split_order"/>
-                            <field name="split_part_index"/>
+                            <field name="part_number"/>
+                            <field name="total_parts"/>
                             <field name="export_status" widget="badge"/>
                             <field name="fulfilment_status" widget="badge"/>
                             <field name="mintsoft_courier_service_name"/>
