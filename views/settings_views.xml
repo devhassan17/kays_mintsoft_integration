@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Odoo 19 res.config.settings Inherited View -->
+    <record id="res_config_settings_view_form_inherit_kays" model="ir.ui.view">
+        <field name="name">res.config.settings.view.form.inherit.kays.mintsoft</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="base.res_config_settings_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//form" position="inside">
+                <app data-string="Kays Logistics" string="Kays Logistics" name="kays_mintsoft_integration"
+                     groups="kays_mintsoft_integration.group_kays_admin">
+                    <block title="Company &amp; Connection Activation" name="kays_company_activation_block">
+                        <setting string="Enable Kays Logistics for Current Company"
+                                 help="Enable or disable Kays Logistics (Mintsoft) fulfilment for this Odoo company.">
+                            <field name="kays_enabled"/>
+                            <div class="content-group mt-2" invisible="not kays_enabled">
+                                <div class="row mt8">
+                                    <label for="kays_default_instance_id" class="col-lg-4 o_light_label"/>
+                                    <field name="kays_default_instance_id"/>
+                                </div>
+                                <div class="row mt8">
+                                    <label for="kays_reference_prefix" class="col-lg-4 o_light_label"/>
+                                    <field name="kays_reference_prefix" placeholder="e.g. MCUK"/>
+                                </div>
+                                <div class="mt8">
+                                    <button name="action_open_kays_connections"
+                                            string="Configure Connections &amp; Credentials"
+                                            type="object"
+                                            class="btn-link"
+                                            icon="fa-arrow-right"/>
+                                </div>
+                            </div>
+                        </setting>
+
+                        <setting string="Environment &amp; API Target"
+                                 invisible="not kays_default_instance_id"
+                                 help="Active environment mode, Mintsoft Warehouse ID, and Client ID.">
+                            <div class="content-group">
+                                <div class="row mt8">
+                                    <label for="kays_environment" class="col-lg-4 o_light_label"/>
+                                    <field name="kays_environment" readonly="1"/>
+                                </div>
+                                <div class="row mt8">
+                                    <label for="kays_active_api_url" class="col-lg-4 o_light_label"/>
+                                    <field name="kays_active_api_url"/>
+                                </div>
+                                <div class="row mt8">
+                                    <label for="kays_mintsoft_warehouse_id" class="col-lg-4 o_light_label"/>
+                                    <field name="kays_mintsoft_warehouse_id"/>
+                                </div>
+                                <div class="row mt8">
+                                    <label for="kays_mintsoft_client_id" class="col-lg-4 o_light_label"/>
+                                    <field name="kays_mintsoft_client_id"/>
+                                </div>
+                            </div>
+                        </setting>
+                    </block>
+
+                    <block title="Feature Enable / Disable Controls" name="kays_feature_switches_block"
+                           invisible="not kays_default_instance_id">
+                        <setting string="Master Integration Switch"><field name="kays_enable_integration"/></setting>
+                        <setting string="Automatic Order Export"><field name="kays_enable_auto_order_export"/></setting>
+                        <setting string="Manual Order Export"><field name="kays_enable_manual_order_export"/></setting>
+                        <setting string="Product Import &amp; SKU Mapping"><field name="kays_enable_product_import"/></setting>
+                        <setting string="Product Export"><field name="kays_enable_product_export"/></setting>
+                        <setting string="Inventory / Stock Sync"><field name="kays_enable_inventory_sync"/></setting>
+                        <setting string="Order Status Sync"><field name="kays_enable_order_status_sync"/></setting>
+                        <setting string="Tracking Sync"><field name="kays_enable_tracking_sync"/></setting>
+                        <setting string="Shipment Sync"><field name="kays_enable_shipment_sync"/></setting>
+                        <setting string="Cancellation Sync"><field name="kays_enable_cancellation_sync"/></setting>
+                        <setting string="Order Amendments"><field name="kays_enable_order_amendments"/></setting>
+                        <setting string="Returns Sync"><field name="kays_enable_returns_sync"/></setting>
+                        <setting string="Webhooks"><field name="kays_enable_webhooks"/></setting>
+                        <setting string="Scheduled Polling"><field name="kays_enable_scheduled_polling"/></setting>
+                        <setting string="Automatic Retry"><field name="kays_enable_auto_retry"/></setting>
+                        <setting string="Customer Dispatch Notification"><field name="kays_enable_customer_notification"/></setting>
+                        <setting string="API Debug Logging"><field name="kays_enable_debug_logging"/></setting>
+                    </block>
+
+                    <block title="Order, Inventory, Shipping &amp; Webhook Policies" name="kays_policies_block"
+                           invisible="not kays_default_instance_id">
+                        <setting string="Order Payment Eligibility Policy">
+                            <field name="kays_payment_eligibility_policy"/>
+                        </setting>
+                        <setting string="Unmapped Shipping Carrier Policy">
+                            <field name="kays_unmapped_carrier_policy"/>
+                        </setting>
+                        <setting string="Inventory Authority &amp; Frequency">
+                            <div class="content-group">
+                                <div class="row mt8">
+                                    <label for="kays_inventory_authority" class="col-lg-4 o_light_label"/>
+                                    <field name="kays_inventory_authority"/>
+                                </div>
+                                <div class="row mt8">
+                                    <label for="kays_stock_sync_interval" class="col-lg-4 o_light_label"/>
+                                    <field name="kays_stock_sync_interval"/>
+                                </div>
+                                <div class="row mt8">
+                                    <label for="kays_max_stock_adjustment_threshold" class="col-lg-4 o_light_label"/>
+                                    <field name="kays_max_stock_adjustment_threshold"/>
+                                </div>
+                            </div>
+                        </setting>
+                        <setting string="Webhook Endpoint &amp; Log Retention">
+                            <div class="content-group">
+                                <div class="row mt8">
+                                    <label for="kays_webhook_url" class="col-lg-4 o_light_label"/>
+                                    <field name="kays_webhook_url"/>
+                                </div>
+                                <div class="row mt8">
+                                    <label for="kays_log_retention_days" class="col-lg-4 o_light_label"/>
+                                    <field name="kays_log_retention_days"/>
+                                </div>
+                            </div>
+                        </setting>
+                    </block>
+                </app>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="action_kays_config_settings" model="ir.actions.act_window">
+        <field name="name">Kays Logistics Settings</field>
+        <field name="res_model">res.config.settings</field>
+        <field name="view_mode">form</field>
+        <field name="context">{'module': 'kays_mintsoft_integration', 'bin_size': False}</field>
+    </record>
+</odoo>

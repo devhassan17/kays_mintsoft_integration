@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- =================================================================== -->
+    <!-- Sales Order Extension — Dedicated "Kays Logistics" Tab (Section 9)  -->
+    <!-- =================================================================== -->
+    <record id="view_order_form_inherit_kays_mintsoft" model="ir.ui.view">
+        <field name="name">sale.order.form.inherit.kays.mintsoft</field>
+        <field name="model">sale.order</field>
+        <field name="inherit_id" ref="sale.view_order_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//div[@name='button_box']" position="inside">
+                <button name="action_kays_view_mintsoft_order"
+                        type="object"
+                        class="oe_stat_button"
+                        icon="fa-cubes"
+                        invisible="kays_order_count == 0">
+                    <field name="kays_order_count" widget="statinfo" string="Kays Orders"/>
+                </button>
+            </xpath>
+            <xpath expr="//notebook" position="inside">
+                <page string="Kays Logistics" name="kays_logistics_tab">
+                    <div class="alert alert-secondary mb-3" role="status" invisible="kays_enabled">
+                        <i class="fa fa-info-circle me-2" title="Company Disabled"/>
+                        <strong>Kays Logistics is disabled for this order's company.</strong>
+                        Orders belonging to disabled companies are never exported automatically.
+                    </div>
+                    <div class="d-flex flex-wrap gap-2 mb-3" invisible="not kays_enabled">
+                        <button name="action_kays_send_order"
+                                string="Send to Kays"
+                                type="object"
+                                class="btn btn-primary"
+                                icon="fa-paper-plane"
+                                groups="kays_mintsoft_integration.group_kays_manager"/>
+                        <button name="action_kays_validate_order"
+                                string="Validate Order"
+                                type="object"
+                                class="btn btn-secondary"
+                                icon="fa-check-square-o"
+                                groups="kays_mintsoft_integration.group_kays_manager"/>
+                        <button name="action_kays_preview_payload"
+                                string="Preview Payload"
+                                type="object"
+                                class="btn btn-secondary"
+                                icon="fa-code"
+                                groups="kays_mintsoft_integration.group_kays_manager"/>
+                        <button name="action_kays_check_status"
+                                string="Check Mintsoft Status"
+                                type="object"
+                                class="btn btn-secondary"
+                                icon="fa-refresh"
+                                invisible="kays_order_count == 0"/>
+                        <button name="action_kays_refresh_tracking"
+                                string="Refresh Tracking"
+                                type="object"
+                                class="btn btn-secondary"
+                                icon="fa-truck"
+                                invisible="kays_order_count == 0"/>
+                        <button name="action_kays_retry_export"
+                                string="Retry Export"
+                                type="object"
+                                class="btn btn-warning"
+                                icon="fa-repeat"
+                                invisible="kays_export_status not in ('failed', 'pending')"
+                                groups="kays_mintsoft_integration.group_kays_manager"/>
+                        <button name="action_kays_request_cancellation"
+                                string="Request Cancellation"
+                                type="object"
+                                class="btn btn-danger"
+                                icon="fa-ban"
+                                invisible="kays_order_count == 0 or kays_fulfilment_status in ('cancelled', 'dispatched', 'delivered')"
+                                confirm="Verify Mintsoft warehouse status and request cancellation in Kays Logistics?"
+                                groups="kays_mintsoft_integration.group_kays_manager"/>
+                        <button name="action_kays_view_mintsoft_order"
+                                string="View Mintsoft Order"
+                                type="object"
+                                class="btn btn-outline-primary"
+                                icon="fa-external-link"
+                                invisible="kays_order_count == 0"/>
+                        <button name="action_kays_view_sync_logs"
+                                string="View Sync Logs"
+                                type="object"
+                                class="btn btn-outline-secondary"
+                                icon="fa-list-alt"/>
+                    </div>
+                    <group>
+                        <group string="Connection &amp; Routing">
+                            <field name="kays_enabled"/>
+                            <field name="kays_instance_id" readonly="not kays_enabled"/>
+                            <field name="kays_mintsoft_client_id"/>
+                            <field name="kays_mintsoft_warehouse"/>
+                            <field name="kays_mintsoft_order_id"/>
+                            <field name="kays_external_reference"/>
+                            <field name="kays_payment_approved" readonly="not kays_enabled"/>
+                        </group>
+                        <group string="Fulfilment &amp; Tracking Telemetry">
+                            <field name="kays_export_status" widget="badge"
+                                   decoration-success="kays_export_status == 'sent'"
+                                   decoration-warning="kays_export_status in ('pending', 'queued', 'validating', 'sending', 'unknown_outcome')"
+                                   decoration-danger="kays_export_status == 'failed'"/>
+                            <field name="kays_fulfilment_status" widget="badge"
+                                   decoration-success="kays_fulfilment_status in ('dispatched', 'delivered')"
+                                   decoration-info="kays_fulfilment_status in ('received', 'processing', 'picked', 'packed')"
+                                   decoration-danger="kays_fulfilment_status == 'cancelled'"/>
+                            <field name="kays_shipment_status" widget="badge"/>
+                            <field name="kays_tracking_number"/>
+                            <field name="kays_courier_name"/>
+                            <field name="kays_last_sync_at"/>
+                            <field name="kays_next_retry_at"/>
+                            <field name="kays_retry_count"/>
+                        </group>
+                    </group>
+                    <group string="Delivery Instructions for Warehouse">
+                        <field name="kays_delivery_notes" placeholder="Optional delivery or packing instructions sent to Mintsoft..."/>
+                    </group>
+                    <group string="Last Export / Sync Error" invisible="not kays_last_error">
+                        <field name="kays_last_error" nolabel="1" readonly="1" class="text-danger font-monospace"/>
+                    </group>
+                    <separator string="Related Mintsoft Orders (Including Split Orders)" invisible="kays_order_count == 0"/>
+                    <field name="kays_order_ids" readonly="1" invisible="kays_order_count == 0">
+                        <list string="Related Mintsoft Orders">
+                            <field name="name"/>
+                            <field name="mintsoft_order_id"/>
+                            <field name="is_split_order"/>
+                            <field name="split_part_index"/>
+                            <field name="export_status" widget="badge"/>
+                            <field name="fulfilment_status" widget="badge"/>
+                            <field name="mintsoft_courier_service_name"/>
+                            <field name="tracking_number"/>
+                            <field name="last_sync_at"/>
+                        </list>
+                    </field>
+                </page>
+            </xpath>
+        </field>
+    </record>
+</odoo>

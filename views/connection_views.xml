@@ -1,0 +1,320 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Kays Mintsoft Connection Instance List View -->
+    <record id="view_kays_mintsoft_instance_list" model="ir.ui.view">
+        <field name="name">kays.mintsoft.instance.list</field>
+        <field name="model">kays.mintsoft.instance</field>
+        <field name="arch" type="xml">
+            <list string="Kays Logistics Connections">
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="company_id"/>
+                <field name="environment" widget="badge"
+                       decoration-info="environment == 'dry_run'"
+                       decoration-warning="environment == 'test_client'"
+                       decoration-danger="environment == 'production'"/>
+                <field name="active_api_url"/>
+                <field name="mintsoft_warehouse_name"/>
+                <field name="mintsoft_warehouse_id"/>
+                <field name="enable_integration" widget="boolean_toggle"/>
+                <field name="connection_status" widget="badge"
+                       decoration-success="connection_status == 'connected'"
+                       decoration-warning="connection_status in ('partial', 'untested')"
+                       decoration-danger="connection_status == 'failed'"/>
+                <field name="last_successful_request"/>
+                <field name="active" widget="boolean_toggle"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Kays Mintsoft Connection Instance Form View (Part B - Section 5) -->
+    <record id="view_kays_mintsoft_instance_form" model="ir.ui.view">
+        <field name="name">kays.mintsoft.instance.form</field>
+        <field name="model">kays.mintsoft.instance</field>
+        <field name="arch" type="xml">
+            <form string="Kays Logistics Connection">
+                <header>
+                    <button name="action_test_connection" string="Test Connection" type="object" class="btn-primary"/>
+                    <button name="action_validate_credentials" string="Validate Credentials" type="object" class="btn-secondary"/>
+                    <button name="action_fetch_warehouses" string="Fetch Warehouses" type="object" class="btn-secondary"/>
+                    <button name="action_fetch_courier_services" string="Fetch Courier Services" type="object" class="btn-secondary"/>
+                    <button name="action_fetch_client_info" string="Fetch Client Information" type="object" class="btn-secondary"/>
+                    <button name="action_fetch_products" string="Fetch Products" type="object" class="btn-secondary"/>
+                    <button name="action_check_api_permissions" string="Check API Permissions" type="object" class="btn-secondary"/>
+                    <button name="action_refresh_connection_status" string="Refresh Connection Status" type="object" class="btn-secondary"/>
+                    <button name="action_open_test_order_wizard" string="Create Test Order" type="object" class="btn-info"/>
+                    <button name="action_open_production_mode_wizard"
+                            string="Switch to Production Mode"
+                            type="object"
+                            class="btn-warning"
+                            invisible="environment == 'production'"
+                            groups="kays_mintsoft_integration.group_kays_admin"/>
+                    <button name="action_view_api_logs" string="View API Logs" type="object" class="btn-secondary"/>
+                    <button name="action_disable_connection"
+                            string="Disable Connection"
+                            type="object"
+                            class="btn-danger"
+                            invisible="not enable_integration"/>
+                    <field name="connection_status" widget="statusbar" statusbar_visible="untested,connected,partial,failed,disabled"/>
+                </header>
+                <sheet>
+                    <div class="alert alert-warning" role="alert" invisible="not api_key_expiry_warning">
+                        <strong>API Key Expiration Warning:</strong> The configured Mintsoft API Key is approaching or past its expiration date (<field name="api_key_expiry_date" readonly="1"/>). Please rotate credentials promptly.
+                    </div>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1><field name="name" placeholder="e.g. Moyee Coffee UK — Kays Main Warehouse"/></h1>
+                    </div>
+
+                    <group>
+                        <group string="General">
+                            <field name="active" widget="boolean_toggle"/>
+                            <field name="enable_integration" widget="boolean_toggle"/>
+                            <field name="is_default"/>
+                            <field name="company_id"/>
+                            <field name="environment"/>
+                            <field name="environment_name" invisible="1"/>
+                            <field name="api_version"/>
+                            <field name="mintsoft_warehouse_id"/>
+                            <field name="mintsoft_warehouse_name"/>
+                            <field name="mintsoft_client_id"/>
+                            <field name="mintsoft_client_name"/>
+                            <field name="default_warehouse_id"/>
+                            <field name="default_location_id"/>
+                            <field name="currency_id"/>
+                        </group>
+                        <group string="Authentication &amp; Health">
+                            <field name="auth_type"/>
+                            <field name="api_key"
+                                   password="True"
+                                   groups="kays_mintsoft_integration.group_kays_admin"
+                                   placeholder="Enter Mintsoft ms-apikey header value..."/>
+                            <field name="api_key_masked" readonly="1"/>
+                            <field name="api_key_expiry_date"/>
+                            <field name="last_auth_check"/>
+                            <field name="last_successful_request"/>
+                            <field name="last_failed_request"/>
+                            <field name="avg_response_time_ms"/>
+                        </group>
+                    </group>
+
+                    <notebook>
+                        <page string="Feature Controls" name="features_tab">
+                            <group>
+                                <group string="Order &amp; Fulfilment Features">
+                                    <field name="enable_auto_order_export" widget="boolean_toggle"/>
+                                    <field name="enable_manual_order_export" widget="boolean_toggle"/>
+                                    <field name="enable_order_status_sync" widget="boolean_toggle"/>
+                                    <field name="enable_shipment_sync" widget="boolean_toggle"/>
+                                    <field name="enable_tracking_sync" widget="boolean_toggle"/>
+                                    <field name="enable_cancellation_sync" widget="boolean_toggle"/>
+                                    <field name="enable_order_amendments" widget="boolean_toggle"/>
+                                    <field name="enable_returns_sync" widget="boolean_toggle"/>
+                                </group>
+                                <group string="Catalog, Stock &amp; System Features">
+                                    <field name="enable_product_import" widget="boolean_toggle"/>
+                                    <field name="enable_product_export" widget="boolean_toggle"/>
+                                    <field name="enable_inventory_sync" widget="boolean_toggle"/>
+                                    <field name="enable_webhooks" widget="boolean_toggle"/>
+                                    <field name="enable_scheduled_polling" widget="boolean_toggle"/>
+                                    <field name="enable_auto_retry" widget="boolean_toggle"/>
+                                    <field name="enable_customer_notification" widget="boolean_toggle"/>
+                                    <field name="enable_debug_logging" widget="boolean_toggle"/>
+                                </group>
+                            </group>
+                        </page>
+
+                        <page string="Environment &amp; API URLs" name="env_urls_tab">
+                            <group>
+                                <group string="API Endpoints (HTTPS Required)">
+                                    <field name="production_api_url"/>
+                                    <field name="test_api_url"/>
+                                    <field name="custom_api_url"/>
+                                    <field name="active_api_url" readonly="1"/>
+                                    <field name="allowed_hosts" groups="kays_mintsoft_integration.group_kays_admin"/>
+                                </group>
+                                <group string="Sandbox / Test Client &amp; Production Safeguards">
+                                    <field name="test_order_prefix"/>
+                                    <field name="test_write_acknowledged"/>
+                                    <field name="production_approved" readonly="1" groups="kays_mintsoft_integration.group_kays_admin"/>
+                                    <field name="production_approved_by"/>
+                                    <field name="production_approved_date"/>
+                                    <field name="routing_domain"/>
+                                </group>
+                            </group>
+                            <group string="Diagnostic Output">
+                                <field name="health_summary" nolabel="1" placeholder="Click 'Test Connection' to run endpoint diagnostics..."/>
+                            </group>
+                        </page>
+
+                        <page string="Order &amp; Shipping Settings" name="order_settings_tab">
+                            <group>
+                                <group string="Payment Eligibility &amp; References">
+                                    <field name="payment_eligibility_policy"/>
+                                    <field name="allowed_payment_provider_ids"
+                                           widget="many2many_tags"
+                                           invisible="payment_eligibility_policy != 'custom_providers'"/>
+                                    <field name="reference_strategy"/>
+                                    <field name="reference_prefix" invisible="reference_strategy != 'custom_prefix'"/>
+                                    <field name="bundle_mapping_policy"/>
+                                </group>
+                                <group string="Carrier &amp; Channel Defaults">
+                                    <field name="unmapped_carrier_policy"/>
+                                    <field name="default_mintsoft_courier_service_id"/>
+                                    <field name="default_mintsoft_courier_service_name"/>
+                                    <field name="mintsoft_channel_id"/>
+                                    <field name="mintsoft_channel_name"/>
+                                </group>
+                            </group>
+                        </page>
+
+                        <page string="Inventory &amp; Stock Safeguards" name="inventory_settings_tab">
+                            <group>
+                                <group string="Inventory Authority &amp; Schedule">
+                                    <field name="inventory_authority"/>
+                                    <field name="stock_sync_interval"/>
+                                    <field name="stock_sync_custom_minutes" invisible="stock_sync_interval != 'custom'"/>
+                                    <field name="last_stock_sync_at"/>
+                                    <field name="next_stock_sync_at"/>
+                                </group>
+                                <group string="Stock Adjustment Safeguards">
+                                    <field name="max_stock_adjustment_threshold"/>
+                                    <field name="allow_zero_stock_updates"/>
+                                    <field name="skip_mapping_error_products"/>
+                                    <field name="dry_run_stock_adjustments"/>
+                                    <field name="require_manual_approval_unusual"/>
+                                    <field name="notify_large_discrepancies"/>
+                                    <field name="large_discrepancy_threshold" invisible="not notify_large_discrepancies"/>
+                                    <field name="sync_selected_products_only"/>
+                                    <field name="excluded_product_category_ids" widget="many2many_tags"/>
+                                </group>
+                            </group>
+                        </page>
+
+                        <page string="Webhooks &amp; Monitoring" name="webhooks_tab">
+                            <group>
+                                <group string="Real-Time Webhook Receiver">
+                                    <field name="webhook_url" widget="CopyClipboardChar"/>
+                                    <field name="webhook_identifier" readonly="1"/>
+                                    <field name="webhook_secret" password="True" groups="kays_mintsoft_integration.group_kays_admin"/>
+                                    <field name="register_connect_action_on_order"/>
+                                    <field name="connect_action_account_id"/>
+                                    <field name="webhook_rate_limit_per_min"/>
+                                    <field name="webhook_max_payload_bytes"/>
+                                    <button name="action_regenerate_webhook_secret"
+                                            string="Rotate Webhook Identifier &amp; Token"
+                                            type="object"
+                                            class="btn-secondary"
+                                            groups="kays_mintsoft_integration.group_kays_admin"/>
+                                </group>
+                                <group string="Log Retention &amp; Error Alerts">
+                                    <field name="log_retention_days"/>
+                                    <field name="debug_log_retention_days"/>
+                                    <field name="alert_user_ids" widget="many2many_tags"/>
+                                    <field name="alert_cooldown_minutes"/>
+                                    <field name="last_alert_sent_at"/>
+                                    <field name="enable_auto_refund_on_return" groups="kays_mintsoft_integration.group_kays_admin"/>
+                                </group>
+                            </group>
+                        </page>
+
+                        <page string="Notes" name="notes_tab">
+                            <field name="notes" placeholder="Document connection notes, Kays account contacts, and warehouse instructions..."/>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_kays_mintsoft_instances" model="ir.actions.act_window">
+        <field name="name">Connections</field>
+        <field name="res_model">kays.mintsoft.instance</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <!-- Warehouse Mapping Views -->
+    <record id="view_kays_warehouse_mapping_list" model="ir.ui.view">
+        <field name="name">kays.mintsoft.warehouse.mapping.list</field>
+        <field name="model">kays.mintsoft.warehouse.mapping</field>
+        <field name="arch" type="xml">
+            <list string="Warehouse Mappings">
+                <field name="name"/>
+                <field name="company_id"/>
+                <field name="instance_id"/>
+                <field name="mintsoft_warehouse_id"/>
+                <field name="mintsoft_warehouse_name"/>
+                <field name="odoo_warehouse_id"/>
+                <field name="odoo_location_id"/>
+                <field name="is_default" widget="boolean_toggle"/>
+                <field name="last_sync_at"/>
+                <field name="active" widget="boolean_toggle"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_kays_warehouse_mapping_form" model="ir.ui.view">
+        <field name="name">kays.mintsoft.warehouse.mapping.form</field>
+        <field name="model">kays.mintsoft.warehouse.mapping</field>
+        <field name="arch" type="xml">
+            <form string="Warehouse Mapping">
+                <header>
+                    <button name="action_verify_warehouse" string="Verify in Mintsoft" type="object" class="btn-primary"/>
+                    <button name="action_sync_warehouse_stock_now" string="Sync Warehouse Stock Now" type="object" class="btn-secondary"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group string="Mintsoft Warehouse">
+                            <field name="name"/>
+                            <field name="company_id"/>
+                            <field name="instance_id"/>
+                            <field name="mintsoft_warehouse_id"/>
+                            <field name="mintsoft_warehouse_name"/>
+                            <field name="mintsoft_warehouse_code"/>
+                        </group>
+                        <group string="Odoo Inventory Target">
+                            <field name="odoo_warehouse_id"/>
+                            <field name="odoo_location_id"/>
+                            <field name="is_default"/>
+                            <field name="active"/>
+                            <field name="last_sync_at"/>
+                        </group>
+                    </group>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_kays_warehouse_mappings" model="ir.actions.act_window">
+        <field name="name">Warehouses</field>
+        <field name="res_model">kays.mintsoft.warehouse.mapping</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <!-- Multi-Company Integration Management View (Part B - Section 6) -->
+    <record id="view_res_company_kays_list" model="ir.ui.view">
+        <field name="name">res.company.kays.list</field>
+        <field name="model">res.company</field>
+        <field name="priority">99</field>
+        <field name="arch" type="xml">
+            <list string="Companies — Kays Logistics Integration" editable="bottom" create="0" delete="0">
+                <field name="name" readonly="1"/>
+                <field name="kays_enabled" widget="boolean_toggle"/>
+                <field name="kays_reference_prefix"/>
+                <field name="kays_default_instance_id"/>
+                <field name="kays_instance_count"/>
+                <field name="kays_ambiguous_routing_warning" widget="boolean"/>
+                <button name="action_open_kays_connections" string="Manage Connections" type="object" class="btn-link"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="action_kays_companies" model="ir.actions.act_window">
+        <field name="name">Companies — Kays Integration</field>
+        <field name="res_model">res.company</field>
+        <field name="view_mode">list,form</field>
+        <field name="view_id" ref="view_res_company_kays_list"/>
+    </record>
+</odoo>

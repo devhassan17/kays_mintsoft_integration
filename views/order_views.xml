@@ -1,0 +1,390 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Kays Mintsoft Order List View (Part E - Section 10) -->
+    <record id="view_kays_mintsoft_order_list" model="ir.ui.view">
+        <field name="name">kays.mintsoft.order.list</field>
+        <field name="model">kays.mintsoft.order</field>
+        <field name="arch" type="xml">
+            <list string="Kays Fulfilment Orders" multi_edit="1">
+                <header>
+                    <button name="action_send_to_kays" string="Send Selected Orders" type="object" class="btn-primary"/>
+                    <button name="action_retry_export" string="Retry Selected Failed Orders" type="object" class="btn-secondary"/>
+                    <button name="action_check_mintsoft_status" string="Refresh Selected Statuses" type="object" class="btn-secondary"/>
+                </header>
+                <field name="sale_order_id" string="Odoo Order"/>
+                <field name="company_id" string="Company"/>
+                <field name="partner_id" string="Customer"/>
+                <field name="instance_id" string="Connection"/>
+                <field name="mintsoft_order_id" string="Mintsoft ID"/>
+                <field name="external_order_reference" string="External Reference"/>
+                <field name="order_date" string="Order Date"/>
+                <field name="currency_id" column_invisible="1"/>
+                <field name="order_total" string="Order Total" widget="monetary"/>
+                <field name="export_status" string="Export Status" widget="badge"
+                       decoration-success="export_status == 'sent'"
+                       decoration-info="export_status in ('pending', 'validating', 'queued', 'sending')"
+                       decoration-warning="export_status == 'unknown_outcome'"
+                       decoration-danger="export_status == 'failed'"/>
+                <field name="fulfilment_status" string="Fulfilment Status" widget="badge"
+                       decoration-success="fulfilment_status in ('dispatched', 'delivered')"
+                       decoration-info="fulfilment_status in ('received', 'processing', 'picked', 'packed', 'partially_dispatched')"
+                       decoration-warning="fulfilment_status in ('awaiting_confirmation', 'on_hold')"
+                       decoration-danger="fulfilment_status == 'cancelled'"/>
+                <field name="warehouse_display" string="Warehouse"/>
+                <field name="mintsoft_courier_service_name" string="Courier"/>
+                <field name="tracking_number" string="Tracking"/>
+                <field name="last_sync_at" string="Last Sync"/>
+                <field name="last_error" string="Error" optional="show"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Kays Mintsoft Order Form View (Part E - Section 10) -->
+    <record id="view_kays_mintsoft_order_form" model="ir.ui.view">
+        <field name="name">kays.mintsoft.order.form</field>
+        <field name="model">kays.mintsoft.order</field>
+        <field name="arch" type="xml">
+            <form string="Kays Fulfilment Order">
+                <header>
+                    <button name="action_send_to_kays"
+                            string="Send to Kays"
+                            type="object"
+                            class="btn-primary"
+                            invisible="export_status == 'sent' and mintsoft_order_id &gt; 0"/>
+                    <button name="action_validate_order" string="Validate Order" type="object" class="btn-secondary"/>
+                    <button name="action_check_mintsoft_status"
+                            string="Check Mintsoft Status"
+                            type="object"
+                            class="btn-secondary"
+                            invisible="mintsoft_order_id == 0 and export_status != 'unknown_outcome'"/>
+                    <button name="action_refresh_tracking"
+                            string="Refresh Tracking"
+                            type="object"
+                            class="btn-secondary"
+                            invisible="mintsoft_order_id == 0"/>
+                    <button name="action_retry_export"
+                            string="Retry Export"
+                            type="object"
+                            class="btn-warning"
+                            invisible="export_status not in ('failed', 'unknown_outcome')"/>
+                    <button name="action_amend_order"
+                            string="Push Order Amendments"
+                            type="object"
+                            class="btn-secondary"
+                            invisible="mintsoft_order_id == 0 or fulfilment_status in ('picked', 'packed', 'partially_dispatched', 'dispatched', 'delivered', 'cancelled')"/>
+                    <button name="action_request_cancellation"
+                            string="Request Cancellation"
+                            type="object"
+                            class="btn-danger"
+                            invisible="mintsoft_order_id == 0 or fulfilment_status in ('dispatched', 'delivered', 'cancelled')"/>
+                    <button name="action_open_sale_order" string="Open Odoo Order" type="object" class="btn-secondary"/>
+                    <button name="action_view_sync_logs" string="View Sync Logs" type="object" class="btn-secondary"/>
+                    <field name="export_status" widget="statusbar" statusbar_visible="pending,validating,sending,sent,failed,unknown_outcome"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_view_split_orders"
+                                type="object"
+                                class="oe_stat_button"
+                                icon="fa-code-fork"
+                                invisible="split_count == 0 and not is_split_order">
+                            <field name="split_count" widget="statinfo" string="Splits"/>
+                        </button>
+                    </div>
+
+                    <div class="alert alert-warning" role="alert" invisible="export_status != 'unknown_outcome'">
+                        <strong>Unknown Submission Outcome:</strong> The previous export request timed out or returned a server error. Click <em>Check Mintsoft Status</em> or <em>Retry Export</em> to reconcile against Mintsoft before resending.
+                    </div>
+                    <div class="alert alert-danger" role="alert" invisible="not last_error">
+                        <strong>Latest Error:</strong> <field name="last_error" readonly="1"/>
+                    </div>
+
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1><field name="name" readonly="1"/></h1>
+                    </div>
+
+                    <group>
+                        <group string="Order Overview">
+                            <field name="sale_order_id"/>
+                            <field name="company_id"/>
+                            <field name="instance_id"/>
+                            <field name="environment"/>
+                            <field name="external_order_reference"/>
+                            <field name="mintsoft_order_id"/>
+                            <field name="mintsoft_order_number"/>
+                            <field name="is_split_order"/>
+                            <field name="parent_kays_order_id" invisible="not is_split_order"/>
+                            <field name="part_number"/>
+                            <field name="total_parts"/>
+                        </group>
+                        <group string="Customer, Fulfilment &amp; Tracking">
+                            <field name="partner_id"/>
+                            <field name="shipping_partner_id"/>
+                            <field name="order_date"/>
+                            <field name="currency_id" invisible="1"/>
+                            <field name="order_total" widget="monetary"/>
+                            <field name="fulfilment_status"/>
+                            <field name="mintsoft_status_name"/>
+                            <field name="mintsoft_status_id"/>
+                            <field name="warehouse_display"/>
+                            <field name="mintsoft_courier_service_name"/>
+                            <field name="tracking_number"/>
+                            <field name="tracking_url" widget="url"/>
+                            <field name="despatch_date"/>
+                            <field name="delivered_date"/>
+                            <field name="last_sync_at"/>
+                            <field name="retry_count"/>
+                            <field name="next_retry_at"/>
+                        </group>
+                    </group>
+
+                    <notebook>
+                        <page string="Fulfilment Items" name="items_tab">
+                            <field name="line_ids" readonly="1">
+                                <list string="Order Items">
+                                    <field name="sku"/>
+                                    <field name="product_id"/>
+                                    <field name="mintsoft_product_id"/>
+                                    <field name="mintsoft_order_item_id"/>
+                                    <field name="quantity"/>
+                                    <field name="allocated_qty"/>
+                                    <field name="committed_qty"/>
+                                    <field name="backorder_qty"/>
+                                    <field name="unit_price"/>
+                                    <field name="unit_vat"/>
+                                    <field name="discount"/>
+                                </list>
+                            </field>
+                        </page>
+
+                        <page string="Shipments &amp; Tracking Events" name="shipments_tab">
+                            <group string="Shipments">
+                                <field name="shipment_ids" nolabel="1" readonly="1">
+                                    <list string="Shipments">
+                                        <field name="name"/>
+                                        <field name="mintsoft_shipment_id"/>
+                                        <field name="courier_service_name"/>
+                                        <field name="tracking_number"/>
+                                        <field name="tracking_url" widget="url"/>
+                                        <field name="delivery_status" widget="badge"/>
+                                        <field name="shipment_date"/>
+                                        <field name="picking_id"/>
+                                    </list>
+                                </field>
+                            </group>
+                            <group string="Tracking Events">
+                                <field name="tracking_event_ids" nolabel="1" readonly="1">
+                                    <list string="Tracking Events">
+                                        <field name="event_timestamp"/>
+                                        <field name="tracking_number"/>
+                                        <field name="stage_code"/>
+                                        <field name="customer_description"/>
+                                        <field name="external_description"/>
+                                    </list>
+                                </field>
+                            </group>
+                        </page>
+
+                        <page string="Related Odoo Deliveries" name="pickings_tab">
+                            <field name="picking_ids" readonly="1">
+                                <list string="Odoo Delivery Orders">
+                                    <field name="name"/>
+                                    <field name="location_id"/>
+                                    <field name="location_dest_id"/>
+                                    <field name="scheduled_date"/>
+                                    <field name="kays_tracking_number"/>
+                                    <field name="kays_delivery_status" widget="badge"/>
+                                    <field name="state" widget="badge"/>
+                                </list>
+                            </field>
+                        </page>
+
+                        <page string="API Payload &amp; Response Summary" name="payload_tab">
+                            <group string="Sanitized Request Payload Preview">
+                                <field name="payload_preview" nolabel="1" readonly="1"/>
+                            </group>
+                            <group string="Mintsoft Response Summary">
+                                <field name="response_summary" nolabel="1" readonly="1"/>
+                            </group>
+                            <group string="Cancellation Audit" invisible="not cancellation_requested">
+                                <field name="cancellation_requested"/>
+                                <field name="cancellation_requested_at"/>
+                                <field name="cancellation_requested_by"/>
+                                <field name="cancellation_response"/>
+                            </group>
+                        </page>
+
+                        <page string="Sync History &amp; API Logs" name="logs_tab">
+                            <group string="Queued Jobs &amp; Retry History">
+                                <field name="sync_job_ids" nolabel="1" readonly="1">
+                                    <list string="Sync Jobs">
+                                        <field name="name"/>
+                                        <field name="job_type"/>
+                                        <field name="state" widget="badge"/>
+                                        <field name="retry_count"/>
+                                        <field name="next_retry_at"/>
+                                        <field name="last_error"/>
+                                    </list>
+                                </field>
+                            </group>
+                            <group string="Sanitized API Logs">
+                                <field name="log_ids" nolabel="1" readonly="1">
+                                    <list string="API Logs">
+                                        <field name="timestamp"/>
+                                        <field name="operation"/>
+                                        <field name="http_method"/>
+                                        <field name="endpoint"/>
+                                        <field name="http_status"/>
+                                        <field name="duration_ms"/>
+                                        <field name="status" widget="badge"/>
+                                        <field name="error_message"/>
+                                    </list>
+                                </field>
+                            </group>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- Kays Mintsoft Order Search View -->
+    <record id="view_kays_mintsoft_order_search" model="ir.ui.view">
+        <field name="name">kays.mintsoft.order.search</field>
+        <field name="model">kays.mintsoft.order</field>
+        <field name="arch" type="xml">
+            <search string="Search Kays Orders">
+                <field name="name"/>
+                <field name="sale_order_id"/>
+                <field name="external_order_reference"/>
+                <field name="mintsoft_order_id"/>
+                <field name="tracking_number"/>
+                <field name="partner_id"/>
+                <field name="company_id"/>
+                <field name="instance_id"/>
+                <field name="mintsoft_courier_service_name"/>
+                <filter name="filter_pending" string="Pending Export" domain="[('export_status', 'in', ['pending', 'validating', 'queued'])]"/>
+                <filter name="filter_sent" string="Sent" domain="[('export_status', '=', 'sent')]"/>
+                <filter name="filter_failed" string="Failed" domain="[('export_status', '=', 'failed')]"/>
+                <filter name="filter_unknown" string="Unknown Outcome" domain="[('export_status', '=', 'unknown_outcome')]"/>
+                <separator/>
+                <filter name="filter_awaiting_conf" string="Awaiting Confirmation" domain="[('fulfilment_status', '=', 'awaiting_confirmation')]"/>
+                <filter name="filter_processing" string="Processing" domain="[('fulfilment_status', 'in', ['received', 'awaiting_processing', 'processing', 'picked'])]"/>
+                <filter name="filter_packed" string="Packed" domain="[('fulfilment_status', '=', 'packed')]"/>
+                <filter name="filter_dispatched" string="Dispatched" domain="[('fulfilment_status', 'in', ['dispatched', 'partially_dispatched'])]"/>
+                <filter name="filter_delivered" string="Delivered" domain="[('fulfilment_status', '=', 'delivered')]"/>
+                <filter name="filter_cancelled" string="Cancelled" domain="[('fulfilment_status', '=', 'cancelled')]"/>
+                <filter name="filter_splits" string="Split Orders" domain="['|', ('is_split_order', '=', True), ('total_parts', '&gt;', 1)]"/>
+                <group>
+                    <filter name="group_company" string="Company" context="{'group_by': 'company_id'}"/>
+                    <filter name="group_instance" string="Connection" context="{'group_by': 'instance_id'}"/>
+                    <filter name="group_warehouse" string="Warehouse" context="{'group_by': 'warehouse_display'}"/>
+                    <filter name="group_export_status" string="Export Status" context="{'group_by': 'export_status'}"/>
+                    <filter name="group_fulfilment_status" string="Fulfilment Status" context="{'group_by': 'fulfilment_status'}"/>
+                    <filter name="group_courier" string="Courier" context="{'group_by': 'mintsoft_courier_service_name'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- Order Sub-Menu Window Actions (Part A - Section 3.2) -->
+    <record id="action_kays_orders_all" model="ir.actions.act_window">
+        <field name="name">All Kays Orders</field>
+        <field name="res_model">kays.mintsoft.order</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="action_kays_orders_pending" model="ir.actions.act_window">
+        <field name="name">Pending Export</field>
+        <field name="res_model">kays.mintsoft.order</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('export_status', 'in', ['pending', 'validating', 'queued'])]</field>
+    </record>
+
+    <record id="action_kays_orders_awaiting_confirmation" model="ir.actions.act_window">
+        <field name="name">Awaiting Confirmation</field>
+        <field name="res_model">kays.mintsoft.order</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('fulfilment_status', '=', 'awaiting_confirmation')]</field>
+    </record>
+
+    <record id="action_kays_orders_exported" model="ir.actions.act_window">
+        <field name="name">Exported Orders</field>
+        <field name="res_model">kays.mintsoft.order</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('export_status', '=', 'sent')]</field>
+    </record>
+
+    <record id="action_kays_orders_processing" model="ir.actions.act_window">
+        <field name="name">Processing Orders</field>
+        <field name="res_model">kays.mintsoft.order</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('fulfilment_status', 'in', ['received', 'awaiting_processing', 'processing', 'picked'])]</field>
+    </record>
+
+    <record id="action_kays_orders_packed" model="ir.actions.act_window">
+        <field name="name">Packed Orders</field>
+        <field name="res_model">kays.mintsoft.order</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('fulfilment_status', '=', 'packed')]</field>
+    </record>
+
+    <record id="action_kays_orders_dispatched" model="ir.actions.act_window">
+        <field name="name">Dispatched Orders</field>
+        <field name="res_model">kays.mintsoft.order</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('fulfilment_status', 'in', ['dispatched', 'partially_dispatched'])]</field>
+    </record>
+
+    <record id="action_kays_orders_delivered" model="ir.actions.act_window">
+        <field name="name">Delivered Orders</field>
+        <field name="res_model">kays.mintsoft.order</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('fulfilment_status', '=', 'delivered')]</field>
+    </record>
+
+    <record id="action_kays_orders_failed" model="ir.actions.act_window">
+        <field name="name">Failed &amp; Unknown-Outcome Orders</field>
+        <field name="res_model">kays.mintsoft.order</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('export_status', 'in', ['failed', 'unknown_outcome'])]</field>
+    </record>
+
+    <record id="action_kays_orders_cancelled" model="ir.actions.act_window">
+        <field name="name">Cancelled Orders</field>
+        <field name="res_model">kays.mintsoft.order</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('fulfilment_status', '=', 'cancelled')]</field>
+    </record>
+
+    <record id="action_kays_orders_splits" model="ir.actions.act_window">
+        <field name="name">Split Orders</field>
+        <field name="res_model">kays.mintsoft.order</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">['|', ('is_split_order', '=', True), ('total_parts', '&gt;', 1)]</field>
+    </record>
+
+    <!-- Mintsoft Order Status Mapping Views -->
+    <record id="view_kays_status_mapping_list" model="ir.ui.view">
+        <field name="name">kays.mintsoft.status.mapping.list</field>
+        <field name="model">kays.mintsoft.status.mapping</field>
+        <field name="arch" type="xml">
+            <list string="Mintsoft Status Mappings" editable="bottom">
+                <field name="instance_id"/>
+                <field name="mintsoft_status_id"/>
+                <field name="mintsoft_status_name"/>
+                <field name="mintsoft_external_name"/>
+                <field name="odoo_fulfilment_status"/>
+                <field name="active" widget="boolean_toggle"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="action_kays_status_mappings" model="ir.actions.act_window">
+        <field name="name">Order Status Mappings</field>
+        <field name="res_model">kays.mintsoft.status.mapping</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

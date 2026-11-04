@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_kays_tracking_event_list" model="ir.ui.view">
+        <field name="name">kays.mintsoft.tracking.event.list</field>
+        <field name="model">kays.mintsoft.tracking.event</field>
+        <field name="arch" type="xml">
+            <list string="Tracking Updates">
+                <field name="event_timestamp"/>
+                <field name="shipment_id"/>
+                <field name="kays_order_id"/>
+                <field name="tracking_number"/>
+                <field name="stage_code"/>
+                <field name="customer_description"/>
+                <field name="external_description"/>
+                <field name="company_id"/>
+                <field name="instance_id"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_kays_tracking_event_form" model="ir.ui.view">
+        <field name="name">kays.mintsoft.tracking.event.form</field>
+        <field name="model">kays.mintsoft.tracking.event</field>
+        <field name="arch" type="xml">
+            <form string="Tracking Event">
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="shipment_id"/>
+                            <field name="kays_order_id"/>
+                            <field name="company_id"/>
+                            <field name="instance_id"/>
+                            <field name="tracking_number"/>
+                        </group>
+                        <group>
+                            <field name="event_timestamp"/>
+                            <field name="mintsoft_event_id"/>
+                            <field name="tracking_status_id"/>
+                            <field name="stage_code"/>
+                            <field name="customer_description"/>
+                            <field name="external_description"/>
+                            <field name="courier_event_id"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_kays_tracking_updates" model="ir.actions.act_window">
+        <field name="name">Tracking Updates</field>
+        <field name="res_model">kays.mintsoft.tracking.event</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

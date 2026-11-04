@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_kays_manual_sync_wizard_form" model="ir.ui.view">
+        <field name="name">kays.manual.sync.wizard.form</field>
+        <field name="model">kays.manual.sync.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Manual Kays Logistics Synchronization">
+                <group>
+                    <field name="company_id"/>
+                    <field name="instance_id"/>
+                    <field name="sync_operation" widget="radio"/>
+                </group>
+                <footer>
+                    <button name="action_execute_sync"
+                            string="Run Synchronization Now"
+                            type="object"
+                            class="btn-primary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_kays_manual_sync_wizard" model="ir.actions.act_window">
+        <field name="name">Manual Synchronization</field>
+        <field name="res_model">kays.manual.sync.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+</odoo>

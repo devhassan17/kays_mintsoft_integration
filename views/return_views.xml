@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Returns / RMA List & Form Views (Part K - Section 19) -->
+    <record id="view_kays_return_list" model="ir.ui.view">
+        <field name="name">kays.mintsoft.return.list</field>
+        <field name="model">kays.mintsoft.return</field>
+        <field name="arch" type="xml">
+            <list string="Return Requests">
+                <field name="name"/>
+                <field name="mintsoft_return_id"/>
+                <field name="sale_order_id"/>
+                <field name="kays_order_id"/>
+                <field name="company_id"/>
+                <field name="instance_id"/>
+                <field name="reason"/>
+                <field name="expected_return_date"/>
+                <field name="total_requested_qty"/>
+                <field name="total_received_qty"/>
+                <field name="state" widget="badge"
+                       decoration-success="state in ('confirmed', 'received', 'closed')"
+                       decoration-info="state in ('draft', 'submitted', 'partially_received')"
+                       decoration-danger="state == 'failed'"/>
+                <field name="inventory_outcome" widget="badge"/>
+                <field name="last_sync_at"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_kays_return_form" model="ir.ui.view">
+        <field name="name">kays.mintsoft.return.form</field>
+        <field name="model">kays.mintsoft.return</field>
+        <field name="arch" type="xml">
+            <form string="Kays Return / RMA Request">
+                <header>
+                    <button name="action_create_mintsoft_return"
+                            string="Create Return in Mintsoft"
+                            type="object"
+                            class="btn-primary"
+                            invisible="state != 'draft'"/>
+                    <button name="action_sync_return_status"
+                            string="Sync Return Status"
+                            type="object"
+                            class="btn-secondary"
+                            invisible="mintsoft_return_id == 0"/>
+                    <button name="action_retry_failed_return"
+                            string="Retry Failed Return"
+                            type="object"
+                            class="btn-warning"
+                            invisible="state != 'failed'"/>
+                    <button name="action_view_return_history"
+                            string="View Return History"
+                            type="object"
+                            class="btn-secondary"/>
+                    <field name="state" widget="statusbar" statusbar_visible="draft,submitted,confirmed,partially_received,received,closed,failed"/>
+                </header>
+                <sheet>
+                    <div class="alert alert-danger" role="alert" invisible="not last_error">
+                        <strong>Return Error:</strong> <field name="last_error" readonly="1"/>
+                    </div>
+                    <div class="oe_title">
+                        <h1><field name="name" readonly="1"/></h1>
+                    </div>
+                    <group>
+                        <group string="Return Overview">
+                            <field name="company_id"/>
+                            <field name="instance_id"/>
+                            <field name="kays_order_id"/>
+                            <field name="sale_order_id"/>
+                            <field name="mintsoft_order_id"/>
+                            <field name="mintsoft_return_id" readonly="1"/>
+                            <field name="return_picking_id"/>
+                        </group>
+                        <group string="Reason, Expected Date &amp; Outcome">
+                            <field name="reason"/>
+                            <field name="mintsoft_reason_id"/>
+                            <field name="expected_return_date"/>
+                            <field name="inventory_outcome"/>
+                            <field name="refund_approved"/>
+                            <field name="total_requested_qty"/>
+                            <field name="total_received_qty"/>
+                            <field name="last_sync_at"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Return Items" name="items_tab">
+                            <field name="line_ids">
+                                <list string="Return Items" editable="bottom">
+                                    <field name="product_id"/>
+                                    <field name="product_mapping_id"/>
+                                    <field name="sku"/>
+                                    <field name="mintsoft_product_id"/>
+                                    <field name="quantity"/>
+                                    <field name="received_quantity"/>
+                                    <field name="requested_action"/>
+                                    <field name="returned_to_stock"/>
+                                    <field name="stock_action"/>
+                                    <field name="notes"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_kays_return_requests" model="ir.actions.act_window">
+        <field name="name">Return Requests</field>
+        <field name="res_model">kays.mintsoft.return</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="action_kays_return_status" model="ir.actions.act_window">
+        <field name="name">Return Status (Submitted &amp; Received)</field>
+        <field name="res_model">kays.mintsoft.return</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('state', '!=', 'draft')]</field>
+    </record>
+</odoo>

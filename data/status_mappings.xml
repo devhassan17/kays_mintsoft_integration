@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <!-- Sequences -->
+        <record id="seq_kays_stock_snapshot" model="ir.sequence">
+            <field name="name">Kays Stock Snapshot Sequence</field>
+            <field name="code">kays.mintsoft.stock.snapshot</field>
+            <field name="prefix">KSNAP/%(year)s/</field>
+            <field name="padding">5</field>
+            <field name="company_id" eval="False"/>
+        </record>
+
+        <record id="seq_kays_return" model="ir.sequence">
+            <field name="name">Kays Return Request Sequence</field>
+            <field name="code">kays.mintsoft.return</field>
+            <field name="prefix">KRMA/%(year)s/</field>
+            <field name="padding">5</field>
+            <field name="company_id" eval="False"/>
+        </record>
+
+        <!-- Canonical Global Mintsoft OrderStatus -> Odoo Fulfilment Status Mappings -->
+        <record id="status_map_new" model="kays.mintsoft.status.mapping">
+            <field name="mintsoft_status_id">1</field>
+            <field name="mintsoft_status_name">New</field>
+            <field name="mintsoft_external_name">New</field>
+            <field name="odoo_fulfilment_status">received</field>
+        </record>
+
+        <record id="status_map_printing" model="kays.mintsoft.status.mapping">
+            <field name="mintsoft_status_id">2</field>
+            <field name="mintsoft_status_name">Printing</field>
+            <field name="mintsoft_external_name">Processing</field>
+            <field name="odoo_fulfilment_status">processing</field>
+        </record>
+
+        <record id="status_map_printed" model="kays.mintsoft.status.mapping">
+            <field name="mintsoft_status_id">3</field>
+            <field name="mintsoft_status_name">Printed</field>
+            <field name="mintsoft_external_name">Processing</field>
+            <field name="odoo_fulfilment_status">processing</field>
+        </record>
+
+        <record id="status_map_despatched" model="kays.mintsoft.status.mapping">
+            <field name="mintsoft_status_id">4</field>
+            <field name="mintsoft_status_name">Despatched</field>
+            <field name="mintsoft_external_name">Dispatched</field>
+            <field name="odoo_fulfilment_status">dispatched</field>
+        </record>
+
+        <record id="status_map_cancelled" model="kays.mintsoft.status.mapping">
+            <field name="mintsoft_status_id">5</field>
+            <field name="mintsoft_status_name">Cancelled</field>
+            <field name="mintsoft_external_name">Cancelled</field>
+            <field name="odoo_fulfilment_status">cancelled</field>
+        </record>
+
+        <record id="status_map_backorder" model="kays.mintsoft.status.mapping">
+            <field name="mintsoft_status_id">6</field>
+            <field name="mintsoft_status_name">BackOrder</field>
+            <field name="mintsoft_external_name">On Hold</field>
+            <field name="odoo_fulfilment_status">on_hold</field>
+        </record>
+
+        <record id="status_map_picked" model="kays.mintsoft.status.mapping">
+            <field name="mintsoft_status_id">7</field>
+            <field name="mintsoft_status_name">Picked</field>
+            <field name="mintsoft_external_name">Picked</field>
+            <field name="odoo_fulfilment_status">picked</field>
+        </record>
+
+        <record id="status_map_packed" model="kays.mintsoft.status.mapping">
+            <field name="mintsoft_status_id">8</field>
+            <field name="mintsoft_status_name">Packed</field>
+            <field name="mintsoft_external_name">Packed</field>
+            <field name="odoo_fulfilment_status">packed</field>
+        </record>
+
+        <record id="status_map_awaiting_payment" model="kays.mintsoft.status.mapping">
+            <field name="mintsoft_status_id">9</field>
+            <field name="mintsoft_status_name">AwaitingPayment</field>
+            <field name="mintsoft_external_name">On Hold</field>
+            <field name="odoo_fulfilment_status">on_hold</field>
+        </record>
+
+        <record id="status_map_awaiting_confirmation" model="kays.mintsoft.status.mapping">
+            <field name="mintsoft_status_id">10</field>
+            <field name="mintsoft_status_name">AwaitingConfirmation</field>
+            <field name="mintsoft_external_name">Awaiting Confirmation</field>
+            <field name="odoo_fulfilment_status">awaiting_confirmation</field>
+        </record>
+
+        <record id="status_map_fraud_risk" model="kays.mintsoft.status.mapping">
+            <field name="mintsoft_status_id">11</field>
+            <field name="mintsoft_status_name">FraudRisk</field>
+            <field name="mintsoft_external_name">On Hold</field>
+            <field name="odoo_fulfilment_status">on_hold</field>
+        </record>
+
+        <record id="status_map_pack_and_hold" model="kays.mintsoft.status.mapping">
+            <field name="mintsoft_status_id">12</field>
+            <field name="mintsoft_status_name">PackAndHold</field>
+            <field name="mintsoft_external_name">On Hold</field>
+            <field name="odoo_fulfilment_status">on_hold</field>
+        </record>
+
+        <record id="status_map_part_despatched" model="kays.mintsoft.status.mapping">
+            <field name="mintsoft_status_id">13</field>
+            <field name="mintsoft_status_name">PartDespatched</field>
+            <field name="mintsoft_external_name">Partially Dispatched</field>
+            <field name="odoo_fulfilment_status">partially_dispatched</field>
+        </record>
+
+        <record id="status_map_delivered" model="kays.mintsoft.status.mapping">
+            <field name="mintsoft_status_id">14</field>
+            <field name="mintsoft_status_name">Delivered</field>
+            <field name="mintsoft_external_name">Delivered</field>
+            <field name="odoo_fulfilment_status">delivered</field>
+        </record>
+    </data>
+</odoo>

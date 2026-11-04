@@ -1,0 +1,382 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="kays_mintsoft_integration.KaysDashboard">
+        <div class="o_kays_dashboard p-4">
+            <!-- Header & Quick Action Bar -->
+            <div class="kays-header-banner p-4 mb-4 d-flex flex-wrap justify-content-between align-items-center gap-3 shadow-sm">
+                <div>
+                    <h2 class="mb-1 fw-bold text-white">Kays Logistics — Fulfilment Command Center</h2>
+                    <div class="small opacity-75">
+                        Mintsoft REST API V1 | Last Stock Sync: <strong t-esc="state.data.kpis.last_stock_sync"/>
+                        | Next Sync: <strong t-esc="state.data.kpis.next_stock_sync"/>
+                    </div>
+                </div>
+                <div class="d-flex flex-wrap gap-2">
+                    <button class="btn btn-light btn-sm fw-semibold" t-on-click="onTestConnection">
+                        <i class="fa fa-plug me-1"/>Test Connection
+                    </button>
+                    <button class="btn btn-warning btn-sm fw-semibold" t-on-click="onSyncOrdersNow">
+                        <i class="fa fa-paper-plane me-1"/>Sync Orders Now
+                    </button>
+                    <button class="btn btn-info btn-sm text-white fw-semibold" t-on-click="onSyncStockNow">
+                        <i class="fa fa-cubes me-1"/>Sync Stock Now
+                    </button>
+                    <button class="btn btn-secondary btn-sm fw-semibold" t-on-click="onRefreshTracking">
+                        <i class="fa fa-truck me-1"/>Refresh Tracking
+                    </button>
+                    <button class="btn btn-danger btn-sm fw-semibold" t-on-click="onViewFailedOrders">
+                        <i class="fa fa-exclamation-triangle me-1"/>View Failed Orders
+                    </button>
+                    <button class="btn btn-outline-light btn-sm fw-semibold" t-on-click="onRetryFailedJobs">
+                        <i class="fa fa-refresh me-1"/>Retry Failed Jobs
+                    </button>
+                    <button class="btn btn-outline-light btn-sm fw-semibold" t-on-click="onOpenConfiguration">
+                        <i class="fa fa-cog me-1"/>Open Configuration
+                    </button>
+                </div>
+            </div>
+
+            <!-- Filter Bar -->
+            <div class="kays-panel p-3 mb-4 shadow-sm">
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-2">
+                        <label class="form-label small fw-bold mb-1">Company</label>
+                        <select class="form-select form-select-sm" t-model="state.filters.company_id" t-on-change="onFilterChange">
+                            <option value="">All Enabled Companies</option>
+                            <t t-foreach="state.data.filter_options.companies" t-as="comp" t-key="comp.id">
+                                <option t-att-value="comp.id" t-esc="comp.name"/>
+                            </t>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small fw-bold mb-1">Connection</label>
+                        <select class="form-select form-select-sm" t-model="state.filters.instance_id" t-on-change="onFilterChange">
+                            <option value="">All Connections</option>
+                            <t t-foreach="state.data.filter_options.instances" t-as="inst" t-key="inst.id">
+                                <option t-att-value="inst.id" t-esc="inst.name"/>
+                            </t>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small fw-bold mb-1">Environment</label>
+                        <select class="form-select form-select-sm" t-model="state.filters.environment" t-on-change="onFilterChange">
+                            <option value="">All Environments</option>
+                            <option value="dry_run">Dry Run</option>
+                            <option value="test_client">Test Client</option>
+                            <option value="production">Production</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small fw-bold mb-1">Fulfilment Status</label>
+                        <select class="form-select form-select-sm" t-model="state.filters.fulfilment_status" t-on-change="onFilterChange">
+                            <option value="">All Statuses</option>
+                            <option value="received">Received</option>
+                            <option value="processing">Processing</option>
+                            <option value="picked">Picked</option>
+                            <option value="packed">Packed</option>
+                            <option value="dispatched">Dispatched</option>
+                            <option value="delivered">Delivered</option>
+                            <option value="cancelled">Cancelled</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small fw-bold mb-1">From Date</label>
+                        <input type="date" class="form-control form-control-sm" t-model="state.filters.date_from" t-on-change="onFilterChange"/>
+                    </div>
+                    <div class="col-md-2 d-flex gap-2">
+                        <div class="flex-grow-1">
+                            <label class="form-label small fw-bold mb-1">To Date</label>
+                            <input type="date" class="form-control form-control-sm" t-model="state.filters.date_to" t-on-change="onFilterChange"/>
+                        </div>
+                        <button class="btn btn-outline-secondary btn-sm align-self-end" t-on-click="loadDashboardData" title="Refresh Dashboard">
+                            <i class="fa fa-refresh"/>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 13 KPI Cards Grid -->
+            <div class="row g-3 mb-4">
+                <div class="col-6 col-md-3 col-xl-2" t-on-click="() => this.openOrders([])">
+                    <div class="kays-kpi-card p-3 h-100">
+                        <div class="kays-kpi-label">Total Orders</div>
+                        <div class="kays-kpi-value text-primary mt-1" t-esc="state.data.kpis.total_orders"/>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3 col-xl-2" t-on-click="() => this.openOrders([['export_status', 'in', ['pending', 'validating', 'queued']]])">
+                    <div class="kays-kpi-card p-3 h-100">
+                        <div class="kays-kpi-label">Pending Export</div>
+                        <div class="kays-kpi-value text-warning mt-1" t-esc="state.data.kpis.pending_export"/>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3 col-xl-2" t-on-click="() => this.openOrders([['export_status', '=', 'sent']])">
+                    <div class="kays-kpi-card p-3 h-100">
+                        <div class="kays-kpi-label">Exported Today</div>
+                        <div class="kays-kpi-value text-success mt-1" t-esc="state.data.kpis.exported_today"/>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3 col-xl-2" t-on-click="() => this.openOrders([['fulfilment_status', 'in', ['received', 'processing', 'picked', 'packed']]])">
+                    <div class="kays-kpi-card p-3 h-100">
+                        <div class="kays-kpi-label">Processing</div>
+                        <div class="kays-kpi-value text-info mt-1" t-esc="state.data.kpis.processing"/>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3 col-xl-2" t-on-click="() => this.openOrders([['fulfilment_status', 'in', ['picked', 'packed', 'awaiting_processing']]])">
+                    <div class="kays-kpi-card p-3 h-100">
+                        <div class="kays-kpi-label">Awaiting Dispatch</div>
+                        <div class="kays-kpi-value text-secondary mt-1" t-esc="state.data.kpis.awaiting_dispatch"/>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3 col-xl-2" t-on-click="() => this.openOrders([['fulfilment_status', 'in', ['dispatched', 'partially_dispatched']]])">
+                    <div class="kays-kpi-card p-3 h-100">
+                        <div class="kays-kpi-label">Dispatched Today</div>
+                        <div class="kays-kpi-value text-success mt-1" t-esc="state.data.kpis.dispatched_today"/>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3 col-xl-2" t-on-click="() => this.openOrders([['fulfilment_status', '=', 'delivered']])">
+                    <div class="kays-kpi-card p-3 h-100">
+                        <div class="kays-kpi-label">Delivered</div>
+                        <div class="kays-kpi-value text-success mt-1" t-esc="state.data.kpis.delivered"/>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3 col-xl-2" t-on-click="() => this.openOrders([['fulfilment_status', '=', 'cancelled']])">
+                    <div class="kays-kpi-card p-3 h-100">
+                        <div class="kays-kpi-label">Cancelled</div>
+                        <div class="kays-kpi-value text-muted mt-1" t-esc="state.data.kpis.cancelled"/>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3 col-xl-2" t-on-click="onViewFailedOrders">
+                    <div class="kays-kpi-card p-3 h-100">
+                        <div class="kays-kpi-label">Failed Orders</div>
+                        <div class="kays-kpi-value text-danger mt-1" t-esc="state.data.kpis.failed_orders"/>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3 col-xl-2" t-on-click="onOpenFailedJobs">
+                    <div class="kays-kpi-card p-3 h-100">
+                        <div class="kays-kpi-label">Awaiting Retry</div>
+                        <div class="kays-kpi-value text-warning mt-1" t-esc="state.data.kpis.awaiting_retry"/>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3 col-xl-2" t-on-click="onOpenDiscrepancies">
+                    <div class="kays-kpi-card p-3 h-100">
+                        <div class="kays-kpi-label">Stock Differences</div>
+                        <div class="kays-kpi-value text-danger mt-1" t-esc="state.data.kpis.stock_diff_count"/>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3 col-xl-2" t-on-click="onOpenConfiguration">
+                    <div class="kays-kpi-card p-3 h-100">
+                        <div class="kays-kpi-label">API Connection</div>
+                        <div class="mt-2">
+                            <span t-attf-class="badge rounded-pill #{state.data.kpis.connection_status === 'connected' ? 'text-bg-success' : (state.data.kpis.connection_status === 'partial' ? 'text-bg-warning' : 'text-bg-secondary')}"
+                                  t-esc="state.data.kpis.connection_status.toUpperCase()"/>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Charts Row: Orders by Status, Daily Exports & API Response Time -->
+            <div class="row g-4 mb-4">
+                <div class="col-lg-4">
+                    <div class="kays-panel p-3 h-100 shadow-sm">
+                        <h6 class="fw-bold mb-3">Orders by Fulfilment Status</h6>
+                        <t t-foreach="state.data.orders_by_status" t-as="item" t-key="item.status">
+                            <div class="mb-2">
+                                <div class="d-flex justify-content-between small mb-1">
+                                    <span t-esc="item.label"/>
+                                    <strong t-esc="item.count"/>
+                                </div>
+                                <div class="kays-bar-track">
+                                    <div class="kays-bar-fill" t-attf-style="width: #{state.data.kpis.total_orders ? Math.min(100, Math.round((item.count / state.data.kpis.total_orders) * 100)) : 0}%"/>
+                                </div>
+                            </div>
+                        </t>
+                    </div>
+                </div>
+
+                <div class="col-lg-4">
+                    <div class="kays-panel p-3 h-100 shadow-sm">
+                        <h6 class="fw-bold mb-3">Daily Order Export (Last 7 Days)</h6>
+                        <t t-foreach="state.data.daily_exports" t-as="day" t-key="day.date">
+                            <div class="mb-2">
+                                <div class="d-flex justify-content-between small mb-1">
+                                    <span t-esc="day.date"/>
+                                    <strong t-esc="day.count"/>
+                                </div>
+                                <div class="kays-bar-track">
+                                    <div class="kays-bar-fill" t-attf-style="width: #{day.count ? Math.min(100, day.count * 10) : 2}%"/>
+                                </div>
+                            </div>
+                        </t>
+                    </div>
+                </div>
+
+                <div class="col-lg-4">
+                    <div class="kays-panel p-3 h-100 shadow-sm">
+                        <h6 class="fw-bold mb-3">API Response Latency (ms)</h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle mb-0">
+                                <thead>
+                                    <tr class="small text-muted">
+                                        <th>Endpoint</th>
+                                        <th>HTTP</th>
+                                        <th class="text-end">Latency</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <t t-if="!state.data.response_times.length">
+                                        <tr><td colspan="3" class="text-muted small text-center py-3">No API calls logged yet</td></tr>
+                                    </t>
+                                    <t t-foreach="state.data.response_times" t-as="rt" t-key="rt.id">
+                                        <tr class="small">
+                                            <td class="text-truncate" style="max-width: 180px;" t-esc="rt.endpoint"/>
+                                            <td><span class="badge text-bg-light" t-esc="rt.http_status"/></td>
+                                            <td class="text-end fw-semibold"><t t-esc="rt.duration_ms"/> ms</td>
+                                        </tr>
+                                    </t>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Operational Tables Row: Connection Health, Stock Discrepancies, Latest Shipments, Recent Failed Requests -->
+            <div class="row g-4">
+                <div class="col-lg-6">
+                    <div class="kays-panel p-3 h-100 shadow-sm">
+                        <h6 class="fw-bold mb-3">Connection Health Status</h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle mb-0">
+                                <thead>
+                                    <tr class="small text-muted">
+                                        <th>Connection</th>
+                                        <th>Company</th>
+                                        <th>Mode</th>
+                                        <th>Warehouse</th>
+                                        <th>Status</th>
+                                        <th class="text-end">Avg ms</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <t t-if="!state.data.connection_health.length">
+                                        <tr><td colspan="6" class="text-muted small text-center py-3">No connections configured</td></tr>
+                                    </t>
+                                    <t t-foreach="state.data.connection_health" t-as="ch" t-key="ch.id">
+                                        <tr class="small">
+                                            <td class="fw-semibold" t-esc="ch.name"/>
+                                            <td t-esc="ch.company"/>
+                                            <td><span class="badge text-bg-info" t-esc="ch.environment_label"/></td>
+                                            <td><t t-esc="ch.warehouse_name"/> (#<t t-esc="ch.warehouse_id"/>)</td>
+                                            <td><span class="badge text-bg-secondary" t-esc="ch.status"/></td>
+                                            <td class="text-end" t-esc="ch.avg_response_ms"/>
+                                        </tr>
+                                    </t>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-lg-6">
+                    <div class="kays-panel p-3 h-100 shadow-sm">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h6 class="fw-bold mb-0">Stock Discrepancy Summary</h6>
+                            <button class="btn btn-link btn-sm p-0" t-on-click="onOpenDiscrepancies">View All</button>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle mb-0">
+                                <thead>
+                                    <tr class="small text-muted">
+                                        <th>SKU</th>
+                                        <th class="text-end">Odoo Avail</th>
+                                        <th class="text-end">Mintsoft Avail</th>
+                                        <th class="text-end">Difference</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <t t-if="!state.data.stock_discrepancies.length">
+                                        <tr><td colspan="5" class="text-muted small text-center py-3">No stock discrepancies detected</td></tr>
+                                    </t>
+                                    <t t-foreach="state.data.stock_discrepancies" t-as="sd" t-key="sd.id">
+                                        <tr class="small">
+                                            <td class="fw-semibold" t-esc="sd.sku"/>
+                                            <td class="text-end" t-esc="sd.odoo_available"/>
+                                            <td class="text-end" t-esc="sd.mintsoft_available"/>
+                                            <td class="text-end fw-bold text-danger" t-esc="sd.difference"/>
+                                            <td><span class="badge text-bg-warning" t-esc="sd.status"/></td>
+                                        </tr>
+                                    </t>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-lg-6">
+                    <div class="kays-panel p-3 h-100 shadow-sm">
+                        <h6 class="fw-bold mb-3">Latest Shipments</h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle mb-0">
+                                <thead>
+                                    <tr class="small text-muted">
+                                        <th>Order</th>
+                                        <th>Courier</th>
+                                        <th>Tracking</th>
+                                        <th>Status</th>
+                                        <th>Dispatch Date</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <t t-if="!state.data.latest_shipments.length">
+                                        <tr><td colspan="5" class="text-muted small text-center py-3">No shipments recorded yet</td></tr>
+                                    </t>
+                                    <t t-foreach="state.data.latest_shipments" t-as="sh" t-key="sh.id">
+                                        <tr class="small">
+                                            <td class="fw-semibold" t-esc="sh.order_name"/>
+                                            <td t-esc="sh.courier"/>
+                                            <td><code t-esc="sh.tracking_number"/></td>
+                                            <td><span class="badge text-bg-success" t-esc="sh.delivery_status"/></td>
+                                            <td t-esc="sh.shipment_date"/>
+                                        </tr>
+                                    </t>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-lg-6">
+                    <div class="kays-panel p-3 h-100 shadow-sm">
+                        <h6 class="fw-bold mb-3">Recent Failed Requests</h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle mb-0">
+                                <thead>
+                                    <tr class="small text-muted">
+                                        <th>Timestamp</th>
+                                        <th>Endpoint</th>
+                                        <th>HTTP</th>
+                                        <th>Error</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <t t-if="!state.data.recent_failures.length">
+                                        <tr><td colspan="4" class="text-muted small text-center py-3">No recent failed requests</td></tr>
+                                    </t>
+                                    <t t-foreach="state.data.recent_failures" t-as="fl" t-key="fl.id">
+                                        <tr class="small">
+                                            <td class="text-nowrap" t-esc="fl.timestamp"/>
+                                            <td t-esc="fl.endpoint"/>
+                                            <td><span class="badge text-bg-danger" t-esc="fl.http_status"/></td>
+                                            <td class="text-truncate" style="max-width: 240px;" t-esc="fl.error_message"/>
+                                        </tr>
+                                    </t>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </t>
+</templates>

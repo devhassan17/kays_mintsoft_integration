@@ -1,0 +1,206 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <!-- 10 Configurable Task Schedules (kays.mintsoft.job.schedule) -->
+        <record id="job_schedule_pending_order_export" model="kays.mintsoft.job.schedule">
+            <field name="name">Pending Order Export</field>
+            <field name="sequence">10</field>
+            <field name="task_code">pending_order_export</field>
+            <field name="active" eval="True"/>
+            <field name="interval_minutes">5</field>
+            <field name="batch_size">50</field>
+            <field name="retry_policy">exponential_backoff</field>
+        </record>
+
+        <record id="job_schedule_order_reconciliation" model="kays.mintsoft.job.schedule">
+            <field name="name">Existing Order Reconciliation</field>
+            <field name="sequence">20</field>
+            <field name="task_code">order_reconciliation</field>
+            <field name="active" eval="True"/>
+            <field name="interval_minutes">10</field>
+            <field name="batch_size">50</field>
+            <field name="retry_policy">exponential_backoff</field>
+        </record>
+
+        <record id="job_schedule_order_status_sync" model="kays.mintsoft.job.schedule">
+            <field name="name">Order Status Sync</field>
+            <field name="sequence">30</field>
+            <field name="task_code">order_status_sync</field>
+            <field name="active" eval="True"/>
+            <field name="interval_minutes">10</field>
+            <field name="batch_size">100</field>
+            <field name="retry_policy">exponential_backoff</field>
+        </record>
+
+        <record id="job_schedule_stock_sync" model="kays.mintsoft.job.schedule">
+            <field name="name">Stock Sync</field>
+            <field name="sequence">40</field>
+            <field name="task_code">stock_sync</field>
+            <field name="active" eval="True"/>
+            <field name="interval_minutes">15</field>
+            <field name="batch_size">500</field>
+            <field name="retry_policy">exponential_backoff</field>
+        </record>
+
+        <record id="job_schedule_tracking_sync" model="kays.mintsoft.job.schedule">
+            <field name="name">Tracking Sync</field>
+            <field name="sequence">50</field>
+            <field name="task_code">tracking_sync</field>
+            <field name="active" eval="True"/>
+            <field name="interval_minutes">15</field>
+            <field name="batch_size">200</field>
+            <field name="retry_policy">exponential_backoff</field>
+        </record>
+
+        <record id="job_schedule_product_sync" model="kays.mintsoft.job.schedule">
+            <field name="name">Product Sync</field>
+            <field name="sequence">60</field>
+            <field name="task_code">product_sync</field>
+            <field name="active" eval="True"/>
+            <field name="interval_minutes">60</field>
+            <field name="batch_size">200</field>
+            <field name="retry_policy">exponential_backoff</field>
+        </record>
+
+        <record id="job_schedule_failed_job_retry" model="kays.mintsoft.job.schedule">
+            <field name="name">Failed Job Retry</field>
+            <field name="sequence">70</field>
+            <field name="task_code">failed_job_retry</field>
+            <field name="active" eval="True"/>
+            <field name="interval_minutes">5</field>
+            <field name="batch_size">50</field>
+            <field name="retry_policy">exponential_backoff</field>
+        </record>
+
+        <record id="job_schedule_webhook_processing" model="kays.mintsoft.job.schedule">
+            <field name="name">Webhook Event Processing</field>
+            <field name="sequence">80</field>
+            <field name="task_code">webhook_processing</field>
+            <field name="active" eval="True"/>
+            <field name="interval_minutes">2</field>
+            <field name="batch_size">100</field>
+            <field name="retry_policy">exponential_backoff</field>
+        </record>
+
+        <record id="job_schedule_return_sync" model="kays.mintsoft.job.schedule">
+            <field name="name">Return Sync</field>
+            <field name="sequence">90</field>
+            <field name="task_code">return_sync</field>
+            <field name="active" eval="True"/>
+            <field name="interval_minutes">30</field>
+            <field name="batch_size">50</field>
+            <field name="retry_policy">exponential_backoff</field>
+        </record>
+
+        <record id="job_schedule_log_cleanup" model="kays.mintsoft.job.schedule">
+            <field name="name">Log Cleanup</field>
+            <field name="sequence">100</field>
+            <field name="task_code">log_cleanup</field>
+            <field name="active" eval="True"/>
+            <field name="interval_minutes">1440</field>
+            <field name="batch_size">2000</field>
+            <field name="retry_policy">fixed_interval</field>
+        </record>
+
+        <!-- Odoo 19 Scheduled Actions (ir.cron — note: numbercall & doall omitted per Odoo 19 spec) -->
+        <record id="ir_cron_kays_pending_order_export" model="ir.cron">
+            <field name="name">Kays Logistics: Pending Order Export</field>
+            <field name="model_id" ref="model_kays_mintsoft_sync_job"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_pending_order_export()</field>
+            <field name="interval_number">5</field>
+            <field name="interval_type">minutes</field>
+            <field name="active" eval="True"/>
+        </record>
+
+        <record id="ir_cron_kays_order_reconciliation" model="ir.cron">
+            <field name="name">Kays Logistics: Existing Order Reconciliation</field>
+            <field name="model_id" ref="model_kays_mintsoft_sync_job"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_order_reconciliation()</field>
+            <field name="interval_number">10</field>
+            <field name="interval_type">minutes</field>
+            <field name="active" eval="True"/>
+        </record>
+
+        <record id="ir_cron_kays_order_status_sync" model="ir.cron">
+            <field name="name">Kays Logistics: Order Status Sync</field>
+            <field name="model_id" ref="model_kays_mintsoft_sync_job"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_order_status_sync()</field>
+            <field name="interval_number">10</field>
+            <field name="interval_type">minutes</field>
+            <field name="active" eval="True"/>
+        </record>
+
+        <record id="ir_cron_kays_stock_sync" model="ir.cron">
+            <field name="name">Kays Logistics: Stock Sync</field>
+            <field name="model_id" ref="model_kays_mintsoft_sync_job"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_stock_sync()</field>
+            <field name="interval_number">15</field>
+            <field name="interval_type">minutes</field>
+            <field name="active" eval="True"/>
+        </record>
+
+        <record id="ir_cron_kays_tracking_sync" model="ir.cron">
+            <field name="name">Kays Logistics: Tracking Sync</field>
+            <field name="model_id" ref="model_kays_mintsoft_sync_job"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_tracking_sync()</field>
+            <field name="interval_number">15</field>
+            <field name="interval_type">minutes</field>
+            <field name="active" eval="True"/>
+        </record>
+
+        <record id="ir_cron_kays_product_sync" model="ir.cron">
+            <field name="name">Kays Logistics: Product Sync</field>
+            <field name="model_id" ref="model_kays_mintsoft_sync_job"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_product_sync()</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">hours</field>
+            <field name="active" eval="True"/>
+        </record>
+
+        <record id="ir_cron_kays_failed_job_retry" model="ir.cron">
+            <field name="name">Kays Logistics: Failed Job Retry</field>
+            <field name="model_id" ref="model_kays_mintsoft_sync_job"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_failed_job_retry()</field>
+            <field name="interval_number">5</field>
+            <field name="interval_type">minutes</field>
+            <field name="active" eval="True"/>
+        </record>
+
+        <record id="ir_cron_kays_webhook_processing" model="ir.cron">
+            <field name="name">Kays Logistics: Webhook Event Processing</field>
+            <field name="model_id" ref="model_kays_mintsoft_sync_job"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_webhook_processing()</field>
+            <field name="interval_number">2</field>
+            <field name="interval_type">minutes</field>
+            <field name="active" eval="True"/>
+        </record>
+
+        <record id="ir_cron_kays_return_sync" model="ir.cron">
+            <field name="name">Kays Logistics: Return Sync</field>
+            <field name="model_id" ref="model_kays_mintsoft_sync_job"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_return_sync()</field>
+            <field name="interval_number">30</field>
+            <field name="interval_type">minutes</field>
+            <field name="active" eval="True"/>
+        </record>
+
+        <record id="ir_cron_kays_log_cleanup" model="ir.cron">
+            <field name="name">Kays Logistics: Log Cleanup</field>
+            <field name="model_id" ref="model_kays_mintsoft_sync_job"/>
+            <field name="state">code</field>
+            <field name="code">model._cron_log_cleanup()</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
+</odoo>

@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Product Mapping List View (Part G - Section 12) -->
+    <record id="view_kays_product_mapping_list" model="ir.ui.view">
+        <field name="name">kays.mintsoft.product.mapping.list</field>
+        <field name="model">kays.mintsoft.product.mapping</field>
+        <field name="arch" type="xml">
+            <list string="Product &amp; SKU Mappings" multi_edit="1">
+                <header>
+                    <button name="action_validate_mapping" string="Validate Mapping" type="object" class="btn-primary"/>
+                    <button name="action_refresh_mintsoft_product" string="Refresh Mintsoft Product" type="object" class="btn-secondary"/>
+                    <button name="action_create_mapping" string="Auto-Match Odoo SKU" type="object" class="btn-secondary"/>
+                    <button name="action_import_product" string="Import Product" type="object" class="btn-secondary"/>
+                </header>
+                <field name="product_id" string="Odoo Product"/>
+                <field name="odoo_sku" string="Odoo SKU"/>
+                <field name="mintsoft_product_id" string="Mintsoft Product ID"/>
+                <field name="mintsoft_sku" string="Mintsoft SKU"/>
+                <field name="mintsoft_name" string="Mintsoft Name"/>
+                <field name="instance_id" string="Connection"/>
+                <field name="company_id" string="Company"/>
+                <field name="mapping_status" string="Mapping Status" widget="badge"
+                       decoration-success="mapping_status == 'matched'"
+                       decoration-warning="mapping_status in ('missing_in_odoo', 'missing_in_mintsoft', 'mismatch')"
+                       decoration-danger="mapping_status == 'duplicate_sku'"/>
+                <field name="last_mintsoft_stock"/>
+                <field name="last_odoo_stock"/>
+                <field name="last_sync_at" string="Last Sync"/>
+                <field name="last_error" string="Error" optional="show"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Product Mapping Form View -->
+    <record id="view_kays_product_mapping_form" model="ir.ui.view">
+        <field name="name">kays.mintsoft.product.mapping.form</field>
+        <field name="model">kays.mintsoft.product.mapping</field>
+        <field name="arch" type="xml">
+            <form string="Kays Product Mapping">
+                <header>
+                    <button name="action_validate_mapping" string="Validate Mapping" type="object" class="btn-primary"/>
+                    <button name="action_refresh_mintsoft_product" string="Refresh Mintsoft Product" type="object" class="btn-secondary"/>
+                    <button name="action_create_mapping"
+                            string="Create Mapping"
+                            type="object"
+                            class="btn-secondary"
+                            invisible="product_id != False"/>
+                    <button name="action_import_product"
+                            string="Import Product"
+                            type="object"
+                            class="btn-info"
+                            invisible="product_id != False"/>
+                    <button name="action_export_product"
+                            string="Export Product"
+                            type="object"
+                            class="btn-warning"
+                            invisible="not product_id"/>
+                    <button name="action_view_errors"
+                            string="View Errors"
+                            type="object"
+                            class="btn-danger"
+                            invisible="not last_error"/>
+                    <field name="mapping_status" widget="statusbar" statusbar_visible="matched,missing_in_odoo,missing_in_mintsoft,duplicate_sku,mismatch,disabled"/>
+                </header>
+                <sheet>
+                    <div class="alert alert-danger" role="alert" invisible="not last_error">
+                        <strong>Mapping Error:</strong> <field name="last_error" readonly="1"/>
+                    </div>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1><field name="name"/></h1>
+                    </div>
+                    <group>
+                        <group string="Odoo Product &amp; UoM Conversion">
+                            <field name="company_id"/>
+                            <field name="instance_id"/>
+                            <field name="product_id"/>
+                            <field name="odoo_sku"/>
+                            <field name="odoo_barcode"/>
+                            <field name="uom_id"/>
+                            <field name="mintsoft_uom_factor"/>
+                            <field name="sync_stock_enabled"/>
+                            <field name="active"/>
+                        </group>
+                        <group string="Mintsoft Product Metadata">
+                            <field name="mintsoft_product_id"/>
+                            <field name="mintsoft_sku"/>
+                            <field name="mintsoft_name"/>
+                            <field name="mintsoft_barcode"/>
+                            <field name="mintsoft_weight"/>
+                            <field name="mintsoft_height"/>
+                            <field name="mintsoft_width"/>
+                            <field name="mintsoft_depth"/>
+                            <field name="mintsoft_volume"/>
+                            <field name="is_bundle"/>
+                            <field name="discontinued_in_mintsoft"/>
+                        </group>
+                    </group>
+                    <group string="Latest Stock Comparison">
+                        <group>
+                            <field name="last_odoo_stock"/>
+                            <field name="last_mintsoft_stock"/>
+                        </group>
+                        <group>
+                            <field name="last_sync_at"/>
+                            <field name="mintsoft_description"/>
+                        </group>
+                    </group>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- Product Mapping Search View -->
+    <record id="view_kays_product_mapping_search" model="ir.ui.view">
+        <field name="name">kays.mintsoft.product.mapping.search</field>
+        <field name="model">kays.mintsoft.product.mapping</field>
+        <field name="arch" type="xml">
+            <search string="Search Product Mappings">
+                <field name="mintsoft_sku"/>
+                <field name="odoo_sku"/>
+                <field name="product_id"/>
+                <field name="mintsoft_name"/>
+                <field name="instance_id"/>
+                <field name="company_id"/>
+                <filter name="filter_matched" string="Matched" domain="[('mapping_status', '=', 'matched')]"/>
+                <filter name="filter_missing_odoo" string="Missing in Odoo" domain="[('mapping_status', '=', 'missing_in_odoo')]"/>
+                <filter name="filter_missing_mintsoft" string="Missing in Mintsoft" domain="[('mapping_status', '=', 'missing_in_mintsoft')]"/>
+                <filter name="filter_duplicate" string="Duplicate SKU" domain="[('mapping_status', '=', 'duplicate_sku')]"/>
+                <filter name="filter_bundles" string="Bundles" domain="[('is_bundle', '=', True)]"/>
+                <group>
+                    <filter name="group_company" string="Company" context="{'group_by': 'company_id'}"/>
+                    <filter name="group_instance" string="Connection" context="{'group_by': 'instance_id'}"/>
+                    <filter name="group_status" string="Mapping Status" context="{'group_by': 'mapping_status'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- Product Menu Window Actions (Part A - Section 3.3) -->
+    <record id="action_kays_product_mappings" model="ir.actions.act_window">
+        <field name="name">Product Mappings</field>
+        <field name="res_model">kays.mintsoft.product.mapping</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="action_kays_missing_skus" model="ir.actions.act_window">
+        <field name="name">Missing &amp; Unmatched SKUs</field>
+        <field name="res_model">kays.mintsoft.product.mapping</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('mapping_status', 'in', ['missing_in_odoo', 'missing_in_mintsoft', 'duplicate_sku', 'mismatch'])]</field>
+    </record>
+
+    <!-- Inherit product.product Form to Add Kays Mapping Smart Button -->
+    <record id="product_normal_form_view_inherit_kays" model="ir.ui.view">
+        <field name="name">product.product.form.inherit.kays.mintsoft</field>
+        <field name="model">product.product</field>
+        <field name="inherit_id" ref="product.product_normal_form_view"/>
+        <field name="arch" type="xml">
+            <xpath expr="//div[@name='button_box']" position="inside">
+                <button name="action_open_kays_mappings"
+                        type="object"
+                        class="oe_stat_button"
+                        icon="fa-cubes"
+                        groups="kays_mintsoft_integration.group_kays_viewer">
+                    <field name="kays_mapping_count" widget="statinfo" string="Kays SKUs"/>
+                </button>
+            </xpath>
+        </field>
+    </record>
+</odoo>

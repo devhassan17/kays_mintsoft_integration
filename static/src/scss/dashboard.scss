@@ -1,0 +1,57 @@
+.o_kays_dashboard {
+    background-color: #f8fafc;
+    min-height: 100%;
+    overflow-y: auto;
+
+    .kays-header-banner {
+        background: linear-gradient(135deg, #0f4c81 0%, #1b263b 100%);
+        color: #ffffff;
+        border-radius: 10px;
+    }
+
+    .kays-kpi-card {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+        cursor: pointer;
+
+        &:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(15, 76, 129, 0.08);
+        }
+
+        .kays-kpi-value {
+            font-size: 1.65rem;
+            font-weight: 700;
+            line-height: 1.2;
+        }
+
+        .kays-kpi-label {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: #64748b;
+            font-weight: 600;
+        }
+    }
+
+    .kays-panel {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+    }
+
+    .kays-bar-track {
+        background-color: #f1f5f9;
+        height: 10px;
+        border-radius: 5px;
+        overflow: hidden;
+    }
+
+    .kays-bar-fill {
+        background: linear-gradient(90deg, #0f4c81, #2a9d8f);
+        height: 100%;
+        border-radius: 5px;
+    }
+}

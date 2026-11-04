@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Production Mode Confirmation Wizard Form -->
+    <record id="view_kays_production_mode_wizard_form" model="ir.ui.view">
+        <field name="name">kays.production.mode.wizard.form</field>
+        <field name="model">kays.production.mode.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Confirm Production Mode Activation">
+                <div class="alert alert-warning" role="alert">
+                    <strong>Warning:</strong> Switching this connection to Production mode enables live outbound order fulfilment writes to Kays Logistics (Mintsoft).
+                </div>
+                <group>
+                    <field name="instance_id"/>
+                    <field name="company_id"/>
+                    <field name="confirm_credentials_verified"/>
+                    <field name="confirm_live_fulfilment"/>
+                    <field name="approval_notes" placeholder="Document staging test sign-off and approval reference..."/>
+                </group>
+                <footer>
+                    <button name="action_confirm_production_mode"
+                            string="Activate Production Mode"
+                            type="object"
+                            class="btn-danger"
+                            groups="kays_mintsoft_integration.group_kays_admin"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <!-- Test Order Wizard Form (Part F - Section 11) -->
+    <record id="view_kays_test_order_wizard_form" model="ir.ui.view">
+        <field name="name">kays.test.order.wizard.form</field>
+        <field name="model">kays.test.order.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Create Test Order">
+                <header>
+                    <button name="action_validate" string="Validate" type="object" class="btn-primary"/>
+                    <button name="action_preview_payload" string="Preview Payload" type="object" class="btn-secondary"/>
+                    <button name="action_test_api_connection" string="Test API Connection" type="object" class="btn-secondary"/>
+                    <button name="action_check_sku" string="Check SKU" type="object" class="btn-secondary"
+                            invisible="source_mode != 'manual_payload'"/>
+                    <button name="action_check_courier" string="Check Courier" type="object" class="btn-secondary"/>
+                    <button name="action_check_duplicate" string="Check Duplicate" type="object" class="btn-secondary"/>
+                </header>
+
+                <div class="alert alert-info" role="status" invisible="execution_mode != 'dry_run'">
+                    <strong>Dry Run Mode:</strong> No write requests will be sent to Mintsoft. The wizard will validate your SKU, address, warehouse, client, and courier configuration and generate the exact payload preview.
+                </div>
+                <div class="alert alert-warning" role="alert" invisible="execution_mode != 'test_client'">
+                    <strong>Test Client Warning:</strong> Mintsoft does not provide a separate sandbox server. Submitting in Test Client mode sends a real API write to your approved Kays Test Client on live Mintsoft infrastructure and may trigger physical warehouse operations.
+                </div>
+                <div class="alert alert-danger" role="alert" invisible="execution_mode != 'production'">
+                    <strong>Production Mode Warning:</strong> Submitting a test order in Production mode creates a live fulfilment order at Kays Logistics. Fake or placeholder customer data is strictly prohibited.
+                </div>
+
+                <group>
+                    <group string="Connection &amp; Mode">
+                        <field name="instance_id"/>
+                        <field name="company_id"/>
+                        <field name="environment"/>
+                        <field name="execution_mode" widget="radio"/>
+                        <field name="source_mode" widget="radio"/>
+                        <field name="sale_order_id"
+                               invisible="source_mode != 'existing_order'"
+                               required="source_mode == 'existing_order'"/>
+                    </group>
+                    <group string="Mintsoft Target &amp; Courier">
+                        <field name="mintsoft_warehouse_id"/>
+                        <field name="mintsoft_client_id"/>
+                        <field name="carrier_mapping_id"/>
+                        <field name="courier_service_id"/>
+                        <field name="courier_service_name"/>
+                        <field name="reference"/>
+                    </group>
+                </group>
+
+                <group>
+                    <group string="Item Selection" invisible="source_mode != 'manual_payload'">
+                        <field name="product_mapping_id"/>
+                        <field name="test_sku" required="source_mode == 'manual_payload'"/>
+                        <field name="quantity" required="source_mode == 'manual_payload'"/>
+                    </group>
+                    <group string="Recipient &amp; Destination Address">
+                        <field name="recipient_name" required="source_mode == 'manual_payload'"/>
+                        <field name="address_line1" required="source_mode == 'manual_payload'"/>
+                        <field name="address_line2"/>
+                        <field name="city" required="source_mode == 'manual_payload'"/>
+                        <field name="postcode" required="source_mode == 'manual_payload'"/>
+                        <field name="country_id" required="source_mode == 'manual_payload'"/>
+                        <field name="email"/>
+                        <field name="phone"/>
+                        <field name="shipping_notes"/>
+                    </group>
+                </group>
+
+                <group invisible="execution_mode == 'dry_run'">
+                    <field name="live_fulfilment_warning_acknowledged"/>
+                </group>
+
+                <notebook>
+                    <page string="Validation &amp; Result Summary" name="validation_tab">
+                        <group>
+                            <field name="validation_passed"/>
+                            <field name="returned_mintsoft_order_id" invisible="returned_mintsoft_order_id == 0"/>
+                            <field name="created_kays_order_id" invisible="not created_kays_order_id"/>
+                        </group>
+                        <group string="Validation Output">
+                            <field name="validation_summary" nolabel="1" placeholder="Click 'Validate' to run pre-submission checks..."/>
+                        </group>
+                        <group string="Submission Response" invisible="not submission_result">
+                            <field name="submission_result" nolabel="1"/>
+                        </group>
+                    </page>
+                    <page string="Generated Payload Preview" name="payload_tab">
+                        <field name="payload_preview" nolabel="1" placeholder="Click 'Preview Payload' to inspect the sanitized JSON payload..."/>
+                    </page>
+                </notebook>
+
+                <footer>
+                    <button name="action_submit_test_order"
+                            string="Submit Test Order"
+                            type="object"
+                            class="btn-primary"/>
+                    <button name="action_view_result"
+                            string="View Result"
+                            type="object"
+                            class="btn-secondary"
+                            invisible="not created_kays_order_id"/>
+                    <button string="Close" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_kays_test_order_wizard" model="ir.actions.act_window">
+        <field name="name">Create Test Order</field>
+        <field name="res_model">kays.test.order.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+</odoo>

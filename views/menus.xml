@@ -1,0 +1,360 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- =================================================================== -->
+    <!-- Dedicated Configuration Actions for Section 3 Submenus              -->
+    <!-- =================================================================== -->
+    <record id="action_kays_product_sync_menu" model="ir.actions.act_window">
+        <field name="name">Product Synchronization</field>
+        <field name="res_model">kays.manual.sync.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+        <field name="context">{'default_sync_operation': 'fetch_products'}</field>
+    </record>
+
+    <record id="action_kays_api_settings_menu" model="ir.actions.act_window">
+        <field name="name">API Settings</field>
+        <field name="res_model">kays.mintsoft.instance</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="action_kays_order_settings_menu" model="ir.actions.act_window">
+        <field name="name">Order Settings &amp; Status Mappings</field>
+        <field name="res_model">kays.mintsoft.status.mapping</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="action_kays_inventory_settings_menu" model="ir.actions.act_window">
+        <field name="name">Inventory Settings</field>
+        <field name="res_model">res.config.settings</field>
+        <field name="view_mode">form</field>
+        <field name="target">inline</field>
+        <field name="context">{'module': 'kays_mintsoft_integration', 'bin_size': False}</field>
+    </record>
+
+    <record id="action_kays_shipping_settings_menu" model="ir.actions.act_window">
+        <field name="name">Shipping Settings &amp; Courier Mappings</field>
+        <field name="res_model">kays.mintsoft.carrier.mapping</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="action_kays_webhooks_settings_menu" model="ir.actions.act_window">
+        <field name="name">Webhook Configuration &amp; Events</field>
+        <field name="res_model">kays.mintsoft.webhook.event</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="action_kays_advanced_settings_menu" model="ir.actions.act_window">
+        <field name="name">Advanced Settings &amp; Job Schedules</field>
+        <field name="res_model">kays.mintsoft.job.schedule</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <!-- =================================================================== -->
+    <!-- Root Application Menu: Kays Logistics                               -->
+    <!-- =================================================================== -->
+    <menuitem id="menu_kays_logistics_root"
+              name="Kays Logistics"
+              web_icon="kays_mintsoft_integration,static/description/icon.svg"
+              sequence="55"
+              groups="kays_mintsoft_integration.group_kays_viewer"/>
+
+    <!-- 1. Dashboard -->
+    <menuitem id="menu_kays_dashboard"
+              name="Dashboard"
+              parent="menu_kays_logistics_root"
+              action="action_kays_dashboard"
+              sequence="10"
+              groups="kays_mintsoft_integration.group_kays_viewer"/>
+
+    <!-- 2. Orders -->
+    <menuitem id="menu_kays_orders_root"
+              name="Orders"
+              parent="menu_kays_logistics_root"
+              sequence="20"
+              groups="kays_mintsoft_integration.group_kays_viewer"/>
+
+    <menuitem id="menu_kays_orders_all"
+              name="All Kays Orders"
+              parent="menu_kays_orders_root"
+              action="action_kays_orders_all"
+              sequence="10"/>
+
+    <menuitem id="menu_kays_orders_pending"
+              name="Pending Export"
+              parent="menu_kays_orders_root"
+              action="action_kays_orders_pending"
+              sequence="20"/>
+
+    <menuitem id="menu_kays_orders_awaiting_confirmation"
+              name="Awaiting Confirmation"
+              parent="menu_kays_orders_root"
+              action="action_kays_orders_awaiting_confirmation"
+              sequence="30"/>
+
+    <menuitem id="menu_kays_orders_exported"
+              name="Exported"
+              parent="menu_kays_orders_root"
+              action="action_kays_orders_exported"
+              sequence="40"/>
+
+    <menuitem id="menu_kays_orders_processing"
+              name="Processing"
+              parent="menu_kays_orders_root"
+              action="action_kays_orders_processing"
+              sequence="50"/>
+
+    <menuitem id="menu_kays_orders_packed"
+              name="Packed"
+              parent="menu_kays_orders_root"
+              action="action_kays_orders_packed"
+              sequence="60"/>
+
+    <menuitem id="menu_kays_orders_dispatched"
+              name="Dispatched"
+              parent="menu_kays_orders_root"
+              action="action_kays_orders_dispatched"
+              sequence="70"/>
+
+    <menuitem id="menu_kays_orders_delivered"
+              name="Delivered"
+              parent="menu_kays_orders_root"
+              action="action_kays_orders_delivered"
+              sequence="80"/>
+
+    <menuitem id="menu_kays_orders_failed"
+              name="Failed"
+              parent="menu_kays_orders_root"
+              action="action_kays_orders_failed"
+              sequence="90"/>
+
+    <menuitem id="menu_kays_orders_cancelled"
+              name="Cancelled"
+              parent="menu_kays_orders_root"
+              action="action_kays_orders_cancelled"
+              sequence="100"/>
+
+    <menuitem id="menu_kays_orders_splits"
+              name="Split Orders"
+              parent="menu_kays_orders_root"
+              action="action_kays_orders_splits"
+              sequence="110"/>
+
+    <menuitem id="menu_kays_test_order_wizard"
+              name="Create Test Order"
+              parent="menu_kays_orders_root"
+              action="action_kays_test_order_wizard"
+              sequence="120"
+              groups="kays_mintsoft_integration.group_kays_manager"/>
+
+    <!-- 3. Products -->
+    <menuitem id="menu_kays_products_root"
+              name="Products"
+              parent="menu_kays_logistics_root"
+              sequence="30"
+              groups="kays_mintsoft_integration.group_kays_viewer"/>
+
+    <menuitem id="menu_kays_product_mappings"
+              name="Product Mappings"
+              parent="menu_kays_products_root"
+              action="action_kays_product_mappings"
+              sequence="10"/>
+
+    <menuitem id="menu_kays_missing_skus"
+              name="Missing SKUs"
+              parent="menu_kays_products_root"
+              action="action_kays_missing_skus"
+              sequence="20"/>
+
+    <menuitem id="menu_kays_product_sync"
+              name="Product Sync"
+              parent="menu_kays_products_root"
+              action="action_kays_product_sync_menu"
+              sequence="30"
+              groups="kays_mintsoft_integration.group_kays_manager"/>
+
+    <!-- 4. Inventory -->
+    <menuitem id="menu_kays_inventory_root"
+              name="Inventory"
+              parent="menu_kays_logistics_root"
+              sequence="40"
+              groups="kays_mintsoft_integration.group_kays_viewer"/>
+
+    <menuitem id="menu_kays_stock_levels"
+              name="Stock Levels"
+              parent="menu_kays_inventory_root"
+              action="action_kays_stock_levels"
+              sequence="10"/>
+
+    <menuitem id="menu_kays_stock_differences"
+              name="Stock Differences"
+              parent="menu_kays_inventory_root"
+              action="action_kays_stock_differences"
+              sequence="20"/>
+
+    <menuitem id="menu_kays_stock_sync_history"
+              name="Stock Sync History"
+              parent="menu_kays_inventory_root"
+              action="action_kays_stock_sync_history"
+              sequence="30"/>
+
+    <!-- 5. Shipments -->
+    <menuitem id="menu_kays_shipments_root"
+              name="Shipments"
+              parent="menu_kays_logistics_root"
+              sequence="50"
+              groups="kays_mintsoft_integration.group_kays_viewer"/>
+
+    <menuitem id="menu_kays_shipments"
+              name="Shipments"
+              parent="menu_kays_shipments_root"
+              action="action_kays_shipments"
+              sequence="10"/>
+
+    <menuitem id="menu_kays_tracking_updates"
+              name="Tracking Updates"
+              parent="menu_kays_shipments_root"
+              action="action_kays_tracking_updates"
+              sequence="20"/>
+
+    <menuitem id="menu_kays_courier_mappings"
+              name="Courier Mappings"
+              parent="menu_kays_shipments_root"
+              action="action_kays_carrier_mappings"
+              sequence="30"/>
+
+    <!-- 6. Returns -->
+    <menuitem id="menu_kays_returns_root"
+              name="Returns"
+              parent="menu_kays_logistics_root"
+              sequence="60"
+              groups="kays_mintsoft_integration.group_kays_viewer"/>
+
+    <menuitem id="menu_kays_return_requests"
+              name="Return Requests"
+              parent="menu_kays_returns_root"
+              action="action_kays_return_requests"
+              sequence="10"/>
+
+    <menuitem id="menu_kays_return_status"
+              name="Return Status"
+              parent="menu_kays_returns_root"
+              action="action_kays_return_status"
+              sequence="20"/>
+
+    <!-- 7. Operations -->
+    <menuitem id="menu_kays_operations_root"
+              name="Operations"
+              parent="menu_kays_logistics_root"
+              sequence="70"
+              groups="kays_mintsoft_integration.group_kays_viewer"/>
+
+    <menuitem id="menu_kays_sync_jobs"
+              name="Sync Jobs"
+              parent="menu_kays_operations_root"
+              action="action_kays_sync_jobs_all"
+              sequence="10"/>
+
+    <menuitem id="menu_kays_failed_jobs"
+              name="Failed Jobs"
+              parent="menu_kays_operations_root"
+              action="action_kays_sync_jobs_failed"
+              sequence="20"/>
+
+    <menuitem id="menu_kays_api_logs"
+              name="API Logs"
+              parent="menu_kays_operations_root"
+              action="action_kays_api_logs"
+              sequence="30"/>
+
+    <menuitem id="menu_kays_webhook_events"
+              name="Webhook Events"
+              parent="menu_kays_operations_root"
+              action="action_kays_webhook_events"
+              sequence="40"/>
+
+    <menuitem id="menu_kays_sync_history"
+              name="Sync History"
+              parent="menu_kays_operations_root"
+              action="action_kays_job_schedules"
+              sequence="50"/>
+
+    <menuitem id="menu_kays_manual_sync_wizard"
+              name="Manual Synchronization"
+              parent="menu_kays_operations_root"
+              action="action_kays_manual_sync_wizard"
+              sequence="60"
+              groups="kays_mintsoft_integration.group_kays_manager"/>
+
+    <menuitem id="menu_kays_retry_wizard"
+              name="Batch Retry Wizard"
+              parent="menu_kays_operations_root"
+              action="action_kays_retry_wizard"
+              sequence="70"
+              groups="kays_mintsoft_integration.group_kays_manager"/>
+
+    <!-- 8. Configuration -->
+    <menuitem id="menu_kays_configuration_root"
+              name="Configuration"
+              parent="menu_kays_logistics_root"
+              sequence="80"
+              groups="kays_mintsoft_integration.group_kays_manager"/>
+
+    <menuitem id="menu_kays_connections"
+              name="Connections"
+              parent="menu_kays_configuration_root"
+              action="action_kays_mintsoft_instances"
+              sequence="10"
+              groups="kays_mintsoft_integration.group_kays_admin"/>
+
+    <menuitem id="menu_kays_companies"
+              name="Companies"
+              parent="menu_kays_configuration_root"
+              action="action_kays_companies"
+              sequence="20"
+              groups="kays_mintsoft_integration.group_kays_admin"/>
+
+    <menuitem id="menu_kays_warehouses"
+              name="Warehouses"
+              parent="menu_kays_configuration_root"
+              action="action_kays_warehouse_mappings"
+              sequence="30"/>
+
+    <menuitem id="menu_kays_api_settings"
+              name="API Settings"
+              parent="menu_kays_configuration_root"
+              action="action_kays_api_settings_menu"
+              sequence="40"
+              groups="kays_mintsoft_integration.group_kays_admin"/>
+
+    <menuitem id="menu_kays_order_settings"
+              name="Order Settings"
+              parent="menu_kays_configuration_root"
+              action="action_kays_order_settings_menu"
+              sequence="50"/>
+
+    <menuitem id="menu_kays_inventory_settings"
+              name="Inventory Settings"
+              parent="menu_kays_configuration_root"
+              action="action_kays_inventory_settings_menu"
+              sequence="60"
+              groups="kays_mintsoft_integration.group_kays_admin"/>
+
+    <menuitem id="menu_kays_shipping_settings"
+              name="Shipping Settings"
+              parent="menu_kays_configuration_root"
+              action="action_kays_shipping_settings_menu"
+              sequence="70"/>
+
+    <menuitem id="menu_kays_webhooks_settings"
+              name="Webhooks"
+              parent="menu_kays_configuration_root"
+              action="action_kays_webhooks_settings_menu"
+              sequence="80"/>
+
+    <menuitem id="menu_kays_advanced_settings"
+              name="Advanced Settings"
+              parent="menu_kays_configuration_root"
+              action="action_kays_advanced_settings_menu"
+              sequence="90"
+              groups="kays_mintsoft_integration.group_kays_admin"/>
+</odoo>

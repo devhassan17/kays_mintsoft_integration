@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="0">
+        <!-- Odoo 19 3-Tier Security Architecture: Category -> Privilege -> Groups -->
+        <record id="module_category_kays_logistics" model="ir.module.category">
+            <field name="name">Kays Logistics</field>
+            <field name="description">Access control for Kays Logistics (Mintsoft) 3PL Integration</field>
+            <field name="sequence">25</field>
+        </record>
+
+        <record id="res_groups_privilege_kays_logistics" model="res.groups.privilege">
+            <field name="name">Kays Logistics</field>
+            <field name="category_id" ref="module_category_kays_logistics"/>
+            <field name="sequence">10</field>
+        </record>
+
+        <!-- Role 1: Kays Integration Viewer -->
+        <record id="group_kays_viewer" model="res.groups">
+            <field name="name">Kays Integration Viewer</field>
+            <field name="privilege_id" ref="res_groups_privilege_kays_logistics"/>
+            <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+            <field name="comment">Read permitted dashboards, order statuses, shipments, stock levels, and logs only.</field>
+        </record>
+
+        <!-- Role 2: Kays Integration Manager -->
+        <record id="group_kays_manager" model="res.groups">
+            <field name="name">Kays Integration Manager</field>
+            <field name="privilege_id" ref="res_groups_privilege_kays_logistics"/>
+            <field name="implied_ids" eval="[(4, ref('group_kays_viewer'))]"/>
+            <field name="comment">Manage sync jobs, mappings, orders, returns, and permitted manual actions without exposing API credentials.</field>
+        </record>
+
+        <!-- Role 3: Kays Integration Administrator -->
+        <record id="group_kays_admin" model="res.groups">
+            <field name="name">Kays Integration Administrator</field>
+            <field name="privilege_id" ref="res_groups_privilege_kays_logistics"/>
+            <field name="implied_ids" eval="[(4, ref('group_kays_manager')), (4, ref('base.group_system'))]"/>
+            <field name="user_ids" eval="[(4, ref('base.user_root')), (4, ref('base.user_admin'))]"/>
+            <field name="comment">Full configuration, API credentials access, production mode activation, and operational control.</field>
+        </record>
+    </data>
+
+    <!-- Multi-Company Isolation Record Rules (Mandatory Company Isolation) -->
+    <data noupdate="1">
+        <record id="rule_kays_instance_multi_company" model="ir.rule">
+            <field name="name">Kays Connection: Multi-Company Rule</field>
+            <field name="model_id" ref="model_kays_mintsoft_instance"/>
+            <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+        </record>
+
+        <record id="rule_kays_order_multi_company" model="ir.rule">
+            <field name="name">Kays Order: Multi-Company Rule</field>
+            <field name="model_id" ref="model_kays_mintsoft_order"/>
+            <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+        </record>
+
+        <record id="rule_kays_order_line_multi_company" model="ir.rule">
+            <field name="name">Kays Order Line: Multi-Company Rule</field>
+            <field name="model_id" ref="model_kays_mintsoft_order_line"/>
+            <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+        </record>
+
+        <record id="rule_kays_status_mapping_multi_company" model="ir.rule">
+            <field name="name">Kays Status Mapping: Multi-Company Rule</field>
+            <field name="model_id" ref="model_kays_mintsoft_status_mapping"/>
+            <field name="domain_force">['|', ('company_id', '=', False), ('company_id', 'in', company_ids)]</field>
+        </record>
+
+        <record id="rule_kays_shipment_multi_company" model="ir.rule">
+            <field name="name">Kays Shipment: Multi-Company Rule</field>
+            <field name="model_id" ref="model_kays_mintsoft_shipment"/>
+            <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+        </record>
+
+        <record id="rule_kays_tracking_event_multi_company" model="ir.rule">
+            <field name="name">Kays Tracking Event: Multi-Company Rule</field>
+            <field name="model_id" ref="model_kays_mintsoft_tracking_event"/>
+            <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+        </record>
+
+        <record id="rule_kays_product_mapping_multi_company" model="ir.rule">
+            <field name="name">Kays Product Mapping: Multi-Company Rule</field>
+            <field name="model_id" ref="model_kays_mintsoft_product_mapping"/>
+            <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+        </record>
+
+        <record id="rule_kays_carrier_mapping_multi_company" model="ir.rule">
+            <field name="name">Kays Carrier Mapping: Multi-Company Rule</field>
+            <field name="model_id" ref="model_kays_mintsoft_carrier_mapping"/>
+            <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+        </record>
+
+        <record id="rule_kays_warehouse_mapping_multi_company" model="ir.rule">
+            <field name="name">Kays Warehouse Mapping: Multi-Company Rule</field>
+            <field name="model_id" ref="model_kays_mintsoft_warehouse_mapping"/>
+            <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+        </record>
+
+        <record id="rule_kays_stock_snapshot_multi_company" model="ir.rule">
+            <field name="name">Kays Stock Snapshot: Multi-Company Rule</field>
+            <field name="model_id" ref="model_kays_mintsoft_stock_snapshot"/>
+            <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+        </record>
+
+        <record id="rule_kays_stock_discrepancy_multi_company" model="ir.rule">
+            <field name="name">Kays Stock Discrepancy: Multi-Company Rule</field>
+            <field name="model_id" ref="model_kays_mintsoft_stock_discrepancy"/>
+            <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+        </record>
+
+        <record id="rule_kays_sync_job_multi_company" model="ir.rule">
+            <field name="name">Kays Sync Job: Multi-Company Rule</field>
+            <field name="model_id" ref="model_kays_mintsoft_sync_job"/>
+            <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+        </record>
+
+        <record id="rule_kays_log_multi_company" model="ir.rule">
+            <field name="name">Kays API Log: Multi-Company Rule</field>
+            <field name="model_id" ref="model_kays_mintsoft_log"/>
+            <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+        </record>
+
+        <record id="rule_kays_webhook_event_multi_company" model="ir.rule">
+            <field name="name">Kays Webhook Event: Multi-Company Rule</field>
+            <field name="model_id" ref="model_kays_mintsoft_webhook_event"/>
+            <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+        </record>
+
+        <record id="rule_kays_return_multi_company" model="ir.rule">
+            <field name="name">Kays Return: Multi-Company Rule</field>
+            <field name="model_id" ref="model_kays_mintsoft_return"/>
+            <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+        </record>
+
+        <record id="rule_kays_return_line_multi_company" model="ir.rule">
+            <field name="name">Kays Return Line: Multi-Company Rule</field>
+            <field name="model_id" ref="model_kays_mintsoft_return_line"/>
+            <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+        </record>
+    </data>
+</odoo>

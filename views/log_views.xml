@@ -1,0 +1,500 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- =================================================================== -->
+    <!-- Kays Sync Jobs (kays.mintsoft.sync.job)                             -->
+    <!-- =================================================================== -->
+    <record id="view_kays_mintsoft_sync_job_list" model="ir.ui.view">
+        <field name="name">kays.mintsoft.sync.job.list</field>
+        <field name="model">kays.mintsoft.sync.job</field>
+        <field name="arch" type="xml">
+            <list string="Kays Sync Jobs"
+                  decoration-success="state == 'completed'"
+                  decoration-info="state in ('pending', 'running')"
+                  decoration-warning="state in ('retry_scheduled', 'unknown_outcome')"
+                  decoration-danger="state in ('failed', 'dead_letter')"
+                  decoration-muted="state == 'cancelled'">
+                <header>
+                    <button name="action_retry_job_manually"
+                            string="Retry Selected Jobs"
+                            type="object"
+                            class="btn-primary"/>
+                    <button name="action_cancel_job"
+                            string="Cancel Jobs"
+                            type="object"
+                            class="btn-secondary"/>
+                </header>
+                <field name="name"/>
+                <field name="company_id" groups="base.group_multi_company" optional="show"/>
+                <field name="instance_id"/>
+                <field name="job_type" widget="badge"/>
+                <field name="kays_order_id" optional="show"/>
+                <field name="sale_order_id" optional="show"/>
+                <field name="state" widget="badge"
+                       decoration-success="state == 'completed'"
+                       decoration-info="state in ('pending', 'running')"
+                       decoration-warning="state in ('retry_scheduled', 'unknown_outcome')"
+                       decoration-danger="state in ('failed', 'dead_letter')"/>
+                <field name="error_classification" optional="show"/>
+                <field name="retry_count"/>
+                <field name="max_retries" optional="hide"/>
+                <field name="next_retry_at" optional="show"/>
+                <field name="duration_ms" optional="show"/>
+                <field name="last_error" optional="show"/>
+                <button name="action_retry_job_manually"
+                        string="Run / Retry"
+                        type="object"
+                        icon="fa-refresh"
+                        invisible="state == 'completed'"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_kays_mintsoft_sync_job_form" model="ir.ui.view">
+        <field name="name">kays.mintsoft.sync.job.form</field>
+        <field name="model">kays.mintsoft.sync.job</field>
+        <field name="arch" type="xml">
+            <form string="Kays Sync Job">
+                <header>
+                    <button name="action_retry_job_manually"
+                            string="Execute / Retry Now"
+                            type="object"
+                            class="btn-primary"
+                            invisible="state == 'completed'"/>
+                    <button name="action_cancel_job"
+                            string="Cancel Job"
+                            type="object"
+                            class="btn-secondary"
+                            invisible="state in ('completed', 'cancelled')"/>
+                    <field name="state" widget="statusbar" statusbar_visible="pending,running,retry_scheduled,completed,failed,dead_letter"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1><field name="name" readonly="1"/></h1>
+                    </div>
+                    <group>
+                        <group string="Job Context">
+                            <field name="company_id" groups="base.group_multi_company" readonly="1"/>
+                            <field name="instance_id" readonly="1"/>
+                            <field name="job_type" readonly="1"/>
+                            <field name="priority"/>
+                            <field name="correlation_id" readonly="1"/>
+                        </group>
+                        <group string="Linked Records">
+                            <field name="kays_order_id" readonly="1"/>
+                            <field name="sale_order_id" readonly="1"/>
+                            <field name="webhook_event_id" readonly="1"/>
+                            <field name="return_id" readonly="1"/>
+                        </group>
+                    </group>
+                    <group>
+                        <group string="Retry &amp; Backoff Policy">
+                            <field name="is_retryable"/>
+                            <field name="error_classification" readonly="1"/>
+                            <field name="retry_count" readonly="1"/>
+                            <field name="max_retries"/>
+                            <field name="base_backoff_seconds"/>
+                            <field name="retry_after_seconds" readonly="1"/>
+                            <field name="next_retry_at"/>
+                        </group>
+                        <group string="Execution Telemetry">
+                            <field name="started_at" readonly="1"/>
+                            <field name="completed_at" readonly="1"/>
+                            <field name="duration_ms" readonly="1"/>
+                        </group>
+                    </group>
+                    <group string="Error Details" invisible="not last_error">
+                        <field name="last_error" nolabel="1" readonly="1"/>
+                    </group>
+                    <notebook>
+                        <page string="Job Parameters &amp; Result" name="payload_result">
+                            <group>
+                                <field name="payload_json" readonly="1"/>
+                                <field name="result_json" readonly="1"/>
+                            </group>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_kays_mintsoft_sync_job_search" model="ir.ui.view">
+        <field name="name">kays.mintsoft.sync.job.search</field>
+        <field name="model">kays.mintsoft.sync.job</field>
+        <field name="arch" type="xml">
+            <search string="Search Kays Sync Jobs">
+                <field name="name"/>
+                <field name="kays_order_id"/>
+                <field name="sale_order_id"/>
+                <field name="instance_id"/>
+                <field name="correlation_id"/>
+                <filter string="Pending / Queued" name="filter_pending" domain="[('state', 'in', ('pending', 'running'))]"/>
+                <filter string="Awaiting Retry" name="filter_retry" domain="[('state', '=', 'retry_scheduled')]"/>
+                <filter string="Unknown Outcome" name="filter_unknown" domain="[('state', '=', 'unknown_outcome')]"/>
+                <filter string="Failed / Dead-Letter" name="filter_failed" domain="[('state', 'in', ('failed', 'dead_letter'))]"/>
+                <filter string="Completed" name="filter_completed" domain="[('state', '=', 'completed')]"/>
+                <group expand="0" string="Group By">
+                    <filter string="Job Type" name="group_type" context="{'group_by': 'job_type'}"/>
+                    <filter string="Status" name="group_state" context="{'group_by': 'state'}"/>
+                    <filter string="Error Classification" name="group_error" context="{'group_by': 'error_classification'}"/>
+                    <filter string="Connection" name="group_instance" context="{'group_by': 'instance_id'}"/>
+                    <filter string="Company" name="group_company" context="{'group_by': 'company_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_kays_sync_jobs_all" model="ir.actions.act_window">
+        <field name="name">Sync Jobs</field>
+        <field name="res_model">kays.mintsoft.sync.job</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_kays_mintsoft_sync_job_search"/>
+    </record>
+
+    <record id="action_kays_sync_jobs_failed" model="ir.actions.act_window">
+        <field name="name">Failed Jobs</field>
+        <field name="res_model">kays.mintsoft.sync.job</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('state', 'in', ('failed', 'retry_scheduled', 'unknown_outcome', 'dead_letter'))]</field>
+        <field name="search_view_id" ref="view_kays_mintsoft_sync_job_search"/>
+    </record>
+
+    <!-- =================================================================== -->
+    <!-- Scheduled Task Telemetry / Sync History (kays.mintsoft.job.schedule)-->
+    <!-- =================================================================== -->
+    <record id="view_kays_mintsoft_job_schedule_list" model="ir.ui.view">
+        <field name="name">kays.mintsoft.job.schedule.list</field>
+        <field name="model">kays.mintsoft.job.schedule</field>
+        <field name="arch" type="xml">
+            <list string="Scheduled Tasks &amp; Sync History"
+                  decoration-muted="not active"
+                  decoration-warning="last_failed_count &gt; 0">
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="task_code" widget="badge"/>
+                <field name="active" widget="boolean_toggle"/>
+                <field name="interval_minutes"/>
+                <field name="batch_size"/>
+                <field name="retry_policy"/>
+                <field name="last_execution_at"/>
+                <field name="last_success_at"/>
+                <field name="next_execution_at"/>
+                <field name="last_processed_count"/>
+                <field name="last_failed_count" decoration-danger="last_failed_count &gt; 0"/>
+                <field name="total_processed_count" optional="show"/>
+                <field name="total_failed_count" optional="show"/>
+                <field name="last_duration_ms" optional="show"/>
+                <button name="action_run_now"
+                        string="Run Now"
+                        type="object"
+                        icon="fa-play"
+                        class="btn-primary"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_kays_mintsoft_job_schedule_form" model="ir.ui.view">
+        <field name="name">kays.mintsoft.job.schedule.form</field>
+        <field name="model">kays.mintsoft.job.schedule</field>
+        <field name="arch" type="xml">
+            <form string="Scheduled Synchronization Task">
+                <header>
+                    <button name="action_run_now"
+                            string="Run Task Now"
+                            type="object"
+                            class="btn-primary"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1><field name="name"/></h1>
+                    </div>
+                    <group>
+                        <group string="Task Configuration">
+                            <field name="task_code"/>
+                            <field name="active" widget="boolean_toggle"/>
+                            <field name="interval_minutes"/>
+                            <field name="batch_size"/>
+                            <field name="retry_policy"/>
+                            <field name="max_retries"/>
+                            <field name="base_backoff_seconds"/>
+                        </group>
+                        <group string="Execution History &amp; Telemetry">
+                            <field name="last_execution_at"/>
+                            <field name="last_success_at"/>
+                            <field name="next_execution_at"/>
+                            <field name="last_processed_count"/>
+                            <field name="last_failed_count"/>
+                            <field name="total_processed_count"/>
+                            <field name="total_failed_count"/>
+                            <field name="last_duration_ms"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_kays_job_schedules" model="ir.actions.act_window">
+        <field name="name">Sync History &amp; Scheduled Tasks</field>
+        <field name="res_model">kays.mintsoft.job.schedule</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <!-- =================================================================== -->
+    <!-- Sanitized API & Audit Logs (kays.mintsoft.log)                      -->
+    <!-- =================================================================== -->
+    <record id="view_kays_mintsoft_log_list" model="ir.ui.view">
+        <field name="name">kays.mintsoft.log.list</field>
+        <field name="model">kays.mintsoft.log</field>
+        <field name="arch" type="xml">
+            <list string="Sanitized API Logs"
+                  create="0"
+                  edit="0"
+                  decoration-success="status == 'success'"
+                  decoration-warning="status == 'warning'"
+                  decoration-danger="status == 'failure'">
+                <field name="timestamp"/>
+                <field name="company_id" groups="base.group_multi_company" optional="show"/>
+                <field name="instance_id"/>
+                <field name="environment" widget="badge" optional="show"/>
+                <field name="operation"/>
+                <field name="http_method"/>
+                <field name="endpoint"/>
+                <field name="http_status"/>
+                <field name="duration_ms"/>
+                <field name="sale_order_id" optional="show"/>
+                <field name="kays_order_id" optional="show"/>
+                <field name="mintsoft_order_id" optional="hide"/>
+                <field name="status" widget="badge"
+                       decoration-success="status == 'success'"
+                       decoration-warning="status == 'warning'"
+                       decoration-danger="status == 'failure'"/>
+                <field name="error_code" optional="show"/>
+                <field name="is_debug" optional="hide"/>
+                <field name="correlation_id" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_kays_mintsoft_log_form" model="ir.ui.view">
+        <field name="name">kays.mintsoft.log.form</field>
+        <field name="model">kays.mintsoft.log</field>
+        <field name="arch" type="xml">
+            <form string="Sanitized API Audit Log" create="0" edit="0">
+                <sheet>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1><field name="name"/></h1>
+                    </div>
+                    <group>
+                        <group string="Request Metadata">
+                            <field name="timestamp"/>
+                            <field name="company_id" groups="base.group_multi_company"/>
+                            <field name="instance_id"/>
+                            <field name="environment" widget="badge"/>
+                            <field name="operation"/>
+                            <field name="http_method"/>
+                            <field name="endpoint"/>
+                        </group>
+                        <group string="Outcome &amp; Correlation">
+                            <field name="status" widget="badge"/>
+                            <field name="http_status"/>
+                            <field name="duration_ms"/>
+                            <field name="error_code"/>
+                            <field name="retry_count"/>
+                            <field name="is_debug"/>
+                            <field name="correlation_id"/>
+                            <field name="sale_order_id"/>
+                            <field name="kays_order_id"/>
+                            <field name="mintsoft_order_id"/>
+                            <field name="sync_job_id"/>
+                        </group>
+                    </group>
+                    <group string="Error Message" invisible="not error_message">
+                        <field name="error_message" nolabel="1"/>
+                    </group>
+                    <notebook>
+                        <page string="Sanitized Request &amp; Response" name="payloads">
+                            <group>
+                                <field name="request_summary"/>
+                                <field name="response_summary"/>
+                            </group>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_kays_mintsoft_log_search" model="ir.ui.view">
+        <field name="name">kays.mintsoft.log.search</field>
+        <field name="model">kays.mintsoft.log</field>
+        <field name="arch" type="xml">
+            <search string="Search API Logs">
+                <field name="endpoint"/>
+                <field name="operation"/>
+                <field name="sale_order_id"/>
+                <field name="kays_order_id"/>
+                <field name="error_code"/>
+                <field name="correlation_id"/>
+                <field name="instance_id"/>
+                <filter string="Failures" name="filter_failure" domain="[('status', '=', 'failure')]"/>
+                <filter string="Warnings" name="filter_warning" domain="[('status', '=', 'warning')]"/>
+                <filter string="Success" name="filter_success" domain="[('status', '=', 'success')]"/>
+                <separator/>
+                <filter string="Operational Logs" name="filter_operational" domain="[('is_debug', '=', False)]"/>
+                <filter string="Debug Logs" name="filter_debug" domain="[('is_debug', '=', True)]"/>
+                <group expand="0" string="Group By">
+                    <filter string="Outcome" name="group_status" context="{'group_by': 'status'}"/>
+                    <filter string="Operation" name="group_op" context="{'group_by': 'operation'}"/>
+                    <filter string="HTTP Status" name="group_http" context="{'group_by': 'http_status'}"/>
+                    <filter string="Connection" name="group_inst" context="{'group_by': 'instance_id'}"/>
+                    <filter string="Company" name="group_comp" context="{'group_by': 'company_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_kays_api_logs" model="ir.actions.act_window">
+        <field name="name">API Logs</field>
+        <field name="res_model">kays.mintsoft.log</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_kays_mintsoft_log_search"/>
+    </record>
+
+    <!-- =================================================================== -->
+    <!-- Webhook Events (kays.mintsoft.webhook.event)                        -->
+    <!-- =================================================================== -->
+    <record id="view_kays_mintsoft_webhook_event_list" model="ir.ui.view">
+        <field name="name">kays.mintsoft.webhook.event.list</field>
+        <field name="model">kays.mintsoft.webhook.event</field>
+        <field name="arch" type="xml">
+            <list string="Webhook Events"
+                  decoration-success="state == 'processed'"
+                  decoration-info="state in ('received', 'queued', 'processing')"
+                  decoration-muted="state in ('duplicate', 'ignored')"
+                  decoration-danger="state == 'failed'">
+                <header>
+                    <button name="action_reprocess_webhook"
+                            string="Reprocess Selected Webhooks"
+                            type="object"
+                            class="btn-primary"/>
+                    <button name="action_mark_ignored"
+                            string="Mark Ignored"
+                            type="object"
+                            class="btn-secondary"/>
+                </header>
+                <field name="name"/>
+                <field name="received_at"/>
+                <field name="processed_at" optional="show"/>
+                <field name="company_id" groups="base.group_multi_company" optional="show"/>
+                <field name="instance_id"/>
+                <field name="event_type" widget="badge"/>
+                <field name="external_order_reference"/>
+                <field name="mintsoft_order_id" optional="show"/>
+                <field name="tracking_number" optional="show"/>
+                <field name="kays_order_id" optional="show"/>
+                <field name="state" widget="badge"
+                       decoration-success="state == 'processed'"
+                       decoration-info="state in ('received', 'queued', 'processing')"
+                       decoration-muted="state in ('duplicate', 'ignored')"
+                       decoration-danger="state == 'failed'"/>
+                <field name="retry_count" optional="show"/>
+                <field name="error_message" optional="show"/>
+                <button name="action_reprocess_webhook"
+                        string="Reprocess"
+                        type="object"
+                        icon="fa-refresh"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_kays_mintsoft_webhook_event_form" model="ir.ui.view">
+        <field name="name">kays.mintsoft.webhook.event.form</field>
+        <field name="model">kays.mintsoft.webhook.event</field>
+        <field name="arch" type="xml">
+            <form string="Incoming Mintsoft Webhook Event">
+                <header>
+                    <button name="action_reprocess_webhook"
+                            string="Reprocess Event"
+                            type="object"
+                            class="btn-primary"/>
+                    <button name="action_mark_ignored"
+                            string="Mark Ignored"
+                            type="object"
+                            class="btn-secondary"
+                            invisible="state == 'ignored'"/>
+                    <field name="state" widget="statusbar" statusbar_visible="received,queued,processing,processed,duplicate,failed"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1><field name="name" readonly="1"/></h1>
+                    </div>
+                    <group>
+                        <group string="Event Metadata">
+                            <field name="company_id" groups="base.group_multi_company" readonly="1"/>
+                            <field name="instance_id" readonly="1"/>
+                            <field name="event_type"/>
+                            <field name="received_at" readonly="1"/>
+                            <field name="processed_at" readonly="1"/>
+                            <field name="remote_ip" readonly="1"/>
+                            <field name="dedup_hash" readonly="1"/>
+                        </group>
+                        <group string="Order &amp; Tracking Context">
+                            <field name="external_order_reference"/>
+                            <field name="mintsoft_order_id"/>
+                            <field name="tracking_number"/>
+                            <field name="kays_order_id" readonly="1"/>
+                            <field name="sync_job_id" readonly="1"/>
+                            <field name="retry_count" readonly="1"/>
+                        </group>
+                    </group>
+                    <group string="Processing Error" invisible="not error_message">
+                        <field name="error_message" nolabel="1" readonly="1"/>
+                    </group>
+                    <notebook>
+                        <page string="Sanitized Webhook Payload" name="payload">
+                            <field name="payload_redacted" readonly="1"/>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_kays_mintsoft_webhook_event_search" model="ir.ui.view">
+        <field name="name">kays.mintsoft.webhook.event.search</field>
+        <field name="model">kays.mintsoft.webhook.event</field>
+        <field name="arch" type="xml">
+            <search string="Search Webhook Events">
+                <field name="name"/>
+                <field name="external_order_reference"/>
+                <field name="mintsoft_order_id"/>
+                <field name="tracking_number"/>
+                <field name="dedup_hash"/>
+                <field name="instance_id"/>
+                <filter string="Failed" name="filter_failed" domain="[('state', '=', 'failed')]"/>
+                <filter string="Queued / Processing" name="filter_queued" domain="[('state', 'in', ('received', 'queued', 'processing'))]"/>
+                <filter string="Processed" name="filter_processed" domain="[('state', '=', 'processed')]"/>
+                <filter string="Duplicates" name="filter_duplicate" domain="[('state', '=', 'duplicate')]"/>
+                <group expand="0" string="Group By">
+                    <filter string="Event Type" name="group_type" context="{'group_by': 'event_type'}"/>
+                    <filter string="Status" name="group_state" context="{'group_by': 'state'}"/>
+                    <filter string="Connection" name="group_instance" context="{'group_by': 'instance_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_kays_webhook_events" model="ir.actions.act_window">
+        <field name="name">Webhook Events</field>
+        <field name="res_model">kays.mintsoft.webhook.event</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_kays_mintsoft_webhook_event_search"/>
+    </record>
+</odoo>
