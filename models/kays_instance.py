@@ -242,7 +242,7 @@ class KaysMintsoftInstance(models.Model):
     )
     enable_auto_order_export = fields.Boolean(
         string='Automatic Order Export',
-        default=False,
+        default=True,
         tracking=True,
     )
     enable_manual_order_export = fields.Boolean(
@@ -632,6 +632,68 @@ class KaysMintsoftInstance(models.Model):
                     raise ValidationError(
                         _("Use the 'Switch to Production Mode' confirmation wizard to authorize Production mode.")
                     )
+
+    # -------------------------------------------------------------------------
+    # Company Activation Auto-Synchronization
+    # -------------------------------------------------------------------------
+    def _sync_company_kays_activation(self):
+        """
+        Automatically enable Kays Integration on the connection's Odoo Company
+        when an active connection with Enable Kays Integration is created or enabled.
+        """
+        for company in self.mapped('company_id').sudo():
+            active_enabled = self.sudo().search([
+                ('company_id', '=', company.id),
+                ('active', '=', True),
+                ('enable_integration', '=', True),
+            ], order='is_default desc, sequence asc, id asc')
+            if active_enabled:
+                vals = {}
+                if not company.kays_enabled:
+                    vals['kays_enabled'] = True
+                defaults = active_enabled.filtered('is_default')
+                if not company.kays_default_instance_id or company.kays_default_instance_id not in active_enabled:
+                    if len(active_enabled) == 1:
+                        vals['kays_default_instance_id'] = active_enabled[0].id
+                    elif len(defaults) == 1:
+                        vals['kays_default_instance_id'] = defaults[0].id
+                if vals:
+                    company.write(vals)
+                orders = self.env['sale.order'].sudo().search([
+                    ('company_id', '=', company.id),
+                    '|',
+                    ('kays_export_status', '=', 'not_applicable'),
+                    ('kays_instance_id', '=', False),
+                ])
+                if orders:
+                    if len(active_enabled) == 1 or len(defaults) == 1:
+                        target_inst = active_enabled[0] if len(active_enabled) == 1 else defaults[0]
+                        orders.filtered(lambda o: not o.kays_instance_id).write({'kays_instance_id': target_inst.id})
+                    orders._compute_kays_summary()
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        records = super().create(vals_list)
+        records._sync_company_kays_activation()
+        return records
+
+    def write(self, vals):
+        res = super().write(vals)
+        if any(k in vals for k in ('active', 'enable_integration', 'is_default', 'company_id', 'environment')):
+            self._sync_company_kays_activation()
+        return res
+
+    def _register_hook(self):
+        super()._register_hook()
+        try:
+            active_instances = self.sudo().search([
+                ('active', '=', True),
+                ('enable_integration', '=', True),
+            ])
+            if active_instances:
+                active_instances._sync_company_kays_activation()
+        except Exception as exc:
+            _logger.debug("Kays instance register hook skipped: %s", exc)
 
     # -------------------------------------------------------------------------
     # Connection Action Buttons (Part B - Section 5)

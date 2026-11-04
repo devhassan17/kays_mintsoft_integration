@@ -176,6 +176,11 @@ class SaleOrder(models.Model):
             order.kays_primary_order_id = primary
 
             inst = primary.instance_id if primary else order.kays_instance_id
+            if not inst and order.company_id.kays_enabled:
+                try:
+                    inst = order.company_id._get_default_kays_instance(sale_order=order)
+                except UserError:
+                    inst = self.env['kays.mintsoft.instance']
             if not order.company_id.kays_enabled:
                 order.kays_mintsoft_client_id = 0
                 order.kays_mintsoft_warehouse = '-'
