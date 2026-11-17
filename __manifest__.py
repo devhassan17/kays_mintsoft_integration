@@ -1,6 +1,6 @@
 {
     'name': 'Kays Logistics Integration',
-    'version': '19.0.6.0.0',
+    'version': '19.0.7.0.0',
     'category': 'Inventory/Delivery',
     'summary': 'Production 3PL Fulfilment Integration between Odoo 19 Enterprise and Kays Logistics (Mintsoft REST API V1)',
     'description': """

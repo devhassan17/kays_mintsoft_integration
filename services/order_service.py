@@ -510,6 +510,20 @@ class OrderService:
         # 8. Physical moves from picking.move_ids (fall back to sale order lines if moves are not yet assigned)
         physical_items = []
         total_order_val = 0.0
+        total_items_vat = 0.0
+        discount_ex_vat = 0.0
+        shipping_ex_vat = 0.0
+        shipping_vat = 0.0
+
+        for line in sale_order.order_line:
+            if line.display_type:
+                continue
+            is_deliv = getattr(line, 'is_delivery', False) or (
+                sale_order.carrier_id and line.product_id == sale_order.carrier_id.product_id
+            )
+            if is_deliv:
+                shipping_ex_vat += float(line.price_subtotal or (line.price_unit * (line.product_uom_qty or 1.0)) or 0.0)
+                shipping_vat += float(line.price_tax or 0.0)
         # Allow all moves including draft/confirmed states for newly created renewal pickings
         moves = picking.move_ids.filtered(lambda m: m.state != 'cancel' and m.product_id)
         # If no moves at all, fall back to sale order physical lines
@@ -599,7 +613,9 @@ class OrderService:
                 float(sale_line.price_unit or 0.0) * raw_qty * (float(sale_line.discount or 0.0) / 100.0), 2
             ) if sale_line else 0.0
 
-            total_order_val += unit_price_ex_vat * mintsoft_qty
+            total_order_val += (unit_price_ex_vat * mintsoft_qty) - line_discount
+            total_items_vat += unit_vat * mintsoft_qty
+            discount_ex_vat += line_discount
 
             move_desc = getattr(move, 'name', '') or getattr(move, 'description_picking', '')
             item_dict = {
@@ -629,6 +645,9 @@ class OrderService:
             base_ref = self.compute_external_reference(sale_order, instance)
             external_ref = f"{base_ref}-{picking.name.split('/')[-1]}"[:50]
 
+        total_vat = round(total_items_vat + shipping_vat, 2)
+        order_total = round(total_order_val + shipping_ex_vat + total_vat, 2)
+
         return {
             'valid': len(errors) == 0,
             'errors': errors,
@@ -641,10 +660,11 @@ class OrderService:
                 'courier_service_id': courier_service_id,
                 'courier_service_name': courier_service_name,
                 'region': region,
-                'order_total': round(total_order_val, 2),
-                'shipping_ex_vat': 0.0,
-                'shipping_vat': 0.0,
-                'discount_ex_vat': 0.0,
+                'order_total': order_total,
+                'total_vat': total_vat,
+                'shipping_ex_vat': round(shipping_ex_vat, 2),
+                'shipping_vat': round(shipping_vat, 2),
+                'discount_ex_vat': round(discount_ex_vat, 2),
                 'currency_code': currency.name if currency else 'GBP',
                 'items': physical_items,
             },
@@ -781,10 +801,10 @@ class OrderService:
             'WarehouseId': resolved['warehouse_id'],
             'Currency': resolved['currency_code'],
             'OrderValue': resolved['order_total'],
-            'TotalVat': 0.0,
-            'ShippingTotalExVat': 0.0,
-            'ShippingTotalVat': 0.0,
-            'DiscountTotalExVat': 0.0,
+            'TotalVat': resolved.get('total_vat', 0.0),
+            'ShippingTotalExVat': resolved.get('shipping_ex_vat', 0.0),
+            'ShippingTotalVat': resolved.get('shipping_vat', 0.0),
+            'DiscountTotalExVat': resolved.get('discount_ex_vat', 0.0),
             'DeliveryNotes': (picking.note or sale_order.kays_delivery_notes or '')[:500],
             'Tags': ','.join(tags),
             'OrderItems': order_items_payload,
@@ -1305,6 +1325,7 @@ class OrderService:
                 'is_subscription_delivery': True,
                 'subscription_cycle': cycle_num,
                 'picking_id': picking.id,
+                'order_total': resolved.get('order_total', 0.0),
                 'mintsoft_warehouse_id': resolved.get('warehouse_id', instance.mintsoft_warehouse_id),
                 'warehouse_mapping_id': resolved.get('warehouse_mapping_id', False),
                 'carrier_mapping_id': resolved.get('carrier_mapping_id', False),

@@ -242,6 +242,49 @@ class SaleOrder(models.Model):
             order._kays_trigger_auto_export_on_confirm()
         return res
 
+    def _create_invoices(self, *args, **kwargs):
+        moves = super()._create_invoices(*args, **kwargs)
+        try:
+            with self.env.cr.savepoint():
+                self._kays_append_subscription_delivery_invoice_lines(moves)
+        except Exception as exc:
+            _logger.warning("Could not append subscription delivery line to renewal invoice: %s", exc)
+        return moves
+
+    def _kays_append_subscription_delivery_invoice_lines(self, moves):
+        """
+        Ensure recurring renewal invoices for subscription orders include the shipping/delivery
+        order line (e.g. Royal Mail Tracked 48hrs Delivery) and its cost on every renewal cycle.
+        """
+        if not moves:
+            return
+        for move in moves.filtered(lambda m: m.move_type == 'out_invoice' and m.state == 'draft'):
+            invoiced_sale_lines = move.invoice_line_ids.sale_line_ids
+            if not invoiced_sale_lines:
+                continue
+            sub_orders = invoiced_sale_lines.order_id.filtered(
+                lambda o: o.is_subscription_order and o.company_id.kays_enabled
+            )
+            for order in sub_orders:
+                delivery_lines = order.order_line.filtered(
+                    lambda l: not l.display_type
+                    and (
+                        getattr(l, 'is_delivery', False)
+                        or (order.carrier_id and l.product_id == order.carrier_id.product_id)
+                    )
+                    and l.product_id
+                    and l.price_unit > 0
+                )
+                new_inv_lines = []
+                for d_line in delivery_lines:
+                    if d_line not in invoiced_sale_lines:
+                        qty = d_line.product_uom_qty or 1.0
+                        line_vals = d_line._prepare_invoice_line(sequence=d_line.sequence)
+                        line_vals['quantity'] = qty
+                        new_inv_lines.append((0, 0, line_vals))
+                if new_inv_lines:
+                    move.write({'invoice_line_ids': new_inv_lines})
+
     def _kays_trigger_auto_export_on_confirm(self):
         """
         Evaluate whether this confirmed Sales Order should be exported or queued for Kays Logistics.
