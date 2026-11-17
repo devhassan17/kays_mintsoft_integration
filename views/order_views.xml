@@ -17,6 +17,8 @@
                 <field name="instance_id" string="Connection"/>
                 <field name="mintsoft_order_id" string="Mintsoft ID"/>
                 <field name="external_order_reference" string="External Reference"/>
+                <field name="is_subscription_delivery" string="Subscription" optional="show"/>
+                <field name="subscription_cycle" string="Cycle #" optional="show"/>
                 <field name="order_date" string="Order Date"/>
                 <field name="currency_id" column_invisible="1"/>
                 <field name="order_total" string="Order Total" widget="monetary"/>
@@ -113,6 +115,9 @@
                             <field name="external_order_reference"/>
                             <field name="mintsoft_order_id"/>
                             <field name="mintsoft_order_number"/>
+                            <field name="is_subscription_delivery"/>
+                            <field name="subscription_cycle" invisible="not is_subscription_delivery"/>
+                            <field name="picking_id" invisible="not is_subscription_delivery"/>
                             <field name="is_split_order"/>
                             <field name="parent_kays_order_id" invisible="not is_split_order"/>
                             <field name="part_number"/>
@@ -277,6 +282,7 @@
                 <filter name="filter_delivered" string="Delivered" domain="[('fulfilment_status', '=', 'delivered')]"/>
                 <filter name="filter_cancelled" string="Cancelled" domain="[('fulfilment_status', '=', 'cancelled')]"/>
                 <filter name="filter_splits" string="Split Orders" domain="['|', ('is_split_order', '=', True), ('total_parts', '&gt;', 1)]"/>
+                <filter name="filter_subscriptions" string="Subscription Deliveries" domain="[('is_subscription_delivery', '=', True)]"/>
                 <group>
                     <filter name="group_company" string="Company" context="{'group_by': 'company_id'}"/>
                     <filter name="group_instance" string="Connection" context="{'group_by': 'instance_id'}"/>

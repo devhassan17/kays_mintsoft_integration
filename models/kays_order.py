@@ -240,6 +240,23 @@ class KaysMintsoftOrder(models.Model):
     part_number = fields.Integer(string='Part Number', default=1)
     total_parts = fields.Integer(string='Total Parts', default=1)
 
+    # Subscription Delivery Hierarchy
+    is_subscription_delivery = fields.Boolean(
+        string='Is Subscription Delivery',
+        default=False,
+        index=True,
+    )
+    subscription_cycle = fields.Integer(
+        string='Subscription Cycle / Delivery #',
+        default=1,
+    )
+    picking_id = fields.Many2one(
+        'stock.picking',
+        string='Originating Delivery Order',
+        ondelete='set null',
+        index=True,
+    )
+
     order_date = fields.Datetime(string='Order Date', index=True)
     currency_id = fields.Many2one('res.currency', string='Currency')
     order_total = fields.Monetary(string='Order Total', currency_field='currency_id')
@@ -369,10 +386,15 @@ class KaysMintsoftOrder(models.Model):
         for rec in self:
             rec.split_count = len(rec.child_split_order_ids)
 
-    @api.depends('sale_order_id.picking_ids')
+    @api.depends('sale_order_id.picking_ids', 'picking_id')
     def _compute_picking_ids(self):
         for rec in self:
-            rec.picking_ids = rec.sale_order_id.picking_ids if rec.sale_order_id else self.env['stock.picking']
+            if rec.picking_id:
+                rec.picking_ids = rec.picking_id
+            elif rec.sale_order_id:
+                rec.picking_ids = rec.sale_order_id.picking_ids
+            else:
+                rec.picking_ids = self.env['stock.picking']
 
     # -------------------------------------------------------------------------
     # Operational Actions (Part D & Part E)
@@ -381,7 +403,10 @@ class KaysMintsoftOrder(models.Model):
         """Send selected pending/failed orders to Kays Logistics."""
         svc = OrderService(self.env)
         for rec in self:
-            svc.export_sale_order(rec.sale_order_id, instance=rec.instance_id, is_manual=True)
+            if rec.picking_id:
+                svc.export_subscription_delivery(rec.picking_id, instance=rec.instance_id, is_manual=True)
+            else:
+                svc.export_sale_order(rec.sale_order_id, instance=rec.instance_id, is_manual=True)
         return {
             'type': 'ir.actions.client',
             'tag': 'display_notification',
@@ -396,8 +421,12 @@ class KaysMintsoftOrder(models.Model):
         """Validate order without sending to Mintsoft and refresh payload preview."""
         self.ensure_one()
         svc = OrderService(self.env)
-        val_res = svc.validate_sale_order(self.sale_order_id, self.instance_id, is_manual=True)
-        payload = svc.build_mintsoft_order_payload(self.sale_order_id, self.instance_id, validation_result=val_res)
+        if self.picking_id:
+            val_res = svc.validate_subscription_delivery(self.picking_id, self.instance_id, is_manual=True, external_ref=self.external_order_reference)
+            payload = svc.build_mintsoft_subscription_delivery_payload(self.picking_id, self.instance_id, validation_result=val_res)
+        else:
+            val_res = svc.validate_sale_order(self.sale_order_id, self.instance_id, is_manual=True)
+            payload = svc.build_mintsoft_order_payload(self.sale_order_id, self.instance_id, validation_result=val_res)
         self.write({
             'payload_preview': json.dumps(sanitize_payload(payload), indent=2),
             'last_error': "\n".join(val_res['errors']) if not val_res['valid'] else False,
@@ -486,7 +515,10 @@ class KaysMintsoftOrder(models.Model):
                 found = svc.reconcile_unknown_outcome_order(rec)
                 if found or rec.export_status == 'unknown_outcome':
                     continue
-            svc.export_sale_order(rec.sale_order_id, instance=rec.instance_id, is_manual=True)
+            if rec.picking_id:
+                svc.export_subscription_delivery(rec.picking_id, instance=rec.instance_id, is_manual=True)
+            else:
+                svc.export_sale_order(rec.sale_order_id, instance=rec.instance_id, is_manual=True)
             retried += 1
         return {
             'type': 'ir.actions.client',

@@ -194,7 +194,7 @@ class ShipmentService:
         open_pickings = outgoing_pickings.filtered(lambda p: p.state not in ('done', 'cancel'))
         done_pickings = outgoing_pickings.filtered(lambda p: p.state == 'done')
 
-        target_picking = open_pickings[:1] or done_pickings[:1]
+        target_picking = kays_order.picking_id or open_pickings[:1] or done_pickings[:1]
         if not target_picking:
             return
 

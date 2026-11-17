@@ -32,6 +32,7 @@ Key Capabilities:
         'base',
         'web',
         'mail',
+        'account',
         'sale_management',
         'stock',
         'delivery',

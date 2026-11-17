@@ -376,6 +376,248 @@ class OrderService:
             },
         }
 
+    def validate_subscription_delivery(self, picking, instance, is_manual=False, external_ref=None):
+        """
+        Validate an Odoo stock.picking representing a subscription delivery against Mintsoft rules.
+        Validates company, feature switches, shipping address, mapped warehouse, mapped courier,
+        and converts picking stock.move quantities and SKUs.
+        """
+        errors = []
+        warnings = []
+
+        sale_order = picking.sale_id
+        if not sale_order:
+            errors.append(_("Delivery '%s' has no linked Sales Order / Subscription.") % picking.name)
+            return {'valid': False, 'errors': errors, 'warnings': warnings, 'resolved': {}}
+
+        # 1. Company & multi-company isolation
+        company = picking.company_id or sale_order.company_id
+        if not company.kays_enabled:
+            errors.append(_("Kays Logistics integration is disabled for company '%s'.") % company.display_name)
+        if instance.company_id != company:
+            errors.append(
+                _("Connection '%(conn)s' belongs to company '%(icomp)s', not delivery company '%(ocomp)s'.")
+                % {'conn': instance.display_name, 'icomp': instance.company_id.display_name, 'ocomp': company.display_name}
+            )
+
+        # 2. Master & feature switches
+        if not instance.active or not instance.enable_integration:
+            errors.append(_("Kays integration is disabled on connection '%s'.") % instance.display_name)
+        if is_manual and not instance.enable_manual_order_export:
+            errors.append(_("Manual Order Export is disabled on connection '%s'.") % instance.display_name)
+        elif not is_manual and not instance.enable_subscription_export:
+            errors.append(_("Subscription Delivery Export is disabled on connection '%s'.") % instance.display_name)
+
+        # 3. State check
+        if picking.state in ('draft', 'cancel'):
+            errors.append(_("Delivery '%(name)s' is in state '%(state)s'. Cannot export draft or cancelled delivery.") % {'name': picking.name, 'state': picking.state})
+        if picking.picking_type_id.code != 'outgoing':
+            errors.append(_("Delivery '%(name)s' is not an outgoing delivery order.") % {'name': picking.name})
+
+        # 4. Payment eligibility check
+        if not is_manual:
+            pay_ok, pay_reason = self.check_payment_eligibility(sale_order, instance)
+            if not pay_ok:
+                errors.append(pay_reason)
+
+        # 5. Shipping address validation
+        ship_partner = picking.partner_id or sale_order.partner_shipping_id or sale_order.partner_id
+        if not ship_partner:
+            errors.append(_("Shipping partner is missing on delivery and sales order."))
+        else:
+            if not (ship_partner.name or ship_partner.commercial_company_name):
+                errors.append(_("Recipient name is missing on the shipping address."))
+            if not (ship_partner.street or '').strip():
+                errors.append(_("Street address (Address1) is missing on the shipping address."))
+            if not (ship_partner.city or '').strip():
+                errors.append(_("City/Town is missing on the shipping address."))
+            if not (ship_partner.zip or '').strip():
+                errors.append(_("Postcode/ZIP is missing on the shipping address."))
+            if not ship_partner.country_id or not ship_partner.country_id.code:
+                errors.append(_("Country with valid ISO code is required on the shipping address."))
+
+        # 6. Warehouse resolution
+        warehouse_id = instance.mintsoft_warehouse_id
+        odoo_wh = picking.picking_type_id.warehouse_id or sale_order.warehouse_id
+        wh_mapping = self.env['kays.mintsoft.warehouse.mapping'].search([
+            ('instance_id', '=', instance.id),
+            ('odoo_warehouse_id', '=', odoo_wh.id),
+            ('active', '=', True),
+        ], limit=1) if odoo_wh else False
+        if wh_mapping:
+            warehouse_id = wh_mapping.mintsoft_warehouse_id
+        if not warehouse_id or warehouse_id <= 0:
+            errors.append(_("No valid Mintsoft Warehouse ID is mapped or configured on the connection."))
+
+        # 7. Courier mapping resolution
+        country_code = ship_partner.country_id.code if ship_partner and ship_partner.country_id else ''
+        postcode = ship_partner.zip if ship_partner else ''
+        region = self.classify_destination_region(country_code, postcode)
+
+        courier_service_id = 0
+        courier_service_name = ''
+        carrier_mapping = self.env['kays.mintsoft.carrier.mapping']
+
+        carrier = picking.carrier_id or sale_order.carrier_id
+        if carrier:
+            mappings = self.env['kays.mintsoft.carrier.mapping'].search([
+                ('instance_id', '=', instance.id),
+                ('delivery_carrier_id', '=', carrier.id),
+                ('active', '=', True),
+            ])
+            for m in mappings:
+                if m.country_ids and ship_partner.country_id in m.country_ids:
+                    if m.region_policy in ('all', region):
+                        carrier_mapping = m
+                        break
+                elif m.region_policy == region:
+                    carrier_mapping = m
+                    break
+            if not carrier_mapping:
+                carrier_mapping = mappings.filtered(lambda m: m.region_policy == 'all')[:1]
+
+        if carrier_mapping:
+            courier_service_id = carrier_mapping.mintsoft_service_id
+            courier_service_name = carrier_mapping.mintsoft_service_name
+        else:
+            policy = instance.unmapped_carrier_policy or 'block'
+            if policy == 'block':
+                errors.append(
+                    _("Shipping carrier '%(carrier)s' (region: %(region)s) is not mapped to a Mintsoft Courier Service.")
+                    % {'carrier': carrier.display_name if carrier else _('None'), 'region': region}
+                )
+            elif policy == 'warn_fallback':
+                if instance.default_mintsoft_courier_service_id > 0:
+                    courier_service_id = instance.default_mintsoft_courier_service_id
+                    courier_service_name = instance.default_mintsoft_courier_service_name or ''
+                    warnings.append(
+                        _("Used default Mintsoft Courier Service ID %s because delivery carrier was unmapped.")
+                        % courier_service_id
+                    )
+                else:
+                    errors.append(_("Fallback courier policy selected, but no default Mintsoft Courier Service ID is configured."))
+            elif policy == 'allow_auto':
+                courier_service_name = instance.default_mintsoft_courier_service_name or 'AUTO'
+                warnings.append(_("No explicit courier mapping found; using '%s'.") % courier_service_name)
+
+        # 8. Physical moves from picking.move_ids
+        physical_items = []
+        total_order_val = 0.0
+        moves = picking.move_ids.filtered(lambda m: m.state not in ('draft', 'cancel'))
+
+        for move in moves:
+            product = move.product_id
+            if not product or product.type == 'service':
+                continue
+
+            raw_qty = float(move.product_uom_qty or 0.0)
+            if raw_qty <= 0:
+                continue
+
+            line_uom = move.product_uom
+            base_uom = product.uom_id
+            try:
+                if line_uom and base_uom and line_uom != base_uom:
+                    converted_qty = line_uom._compute_quantity(raw_qty, base_uom, round=False)
+                else:
+                    converted_qty = raw_qty
+            except Exception as uom_err:
+                errors.append(
+                    _("Cannot convert UoM for product '%(prod)s': %(err)s")
+                    % {'prod': product.display_name, 'err': uom_err}
+                )
+                continue
+
+            mapping = self.env['kays.mintsoft.product.mapping'].search([
+                ('instance_id', '=', instance.id),
+                ('product_id', '=', product.id),
+                ('active', '=', True),
+            ], limit=1)
+
+            if mapping and mapping.mapping_status == 'disabled':
+                errors.append(_("Product mapping for '%s' is disabled.") % product.display_name)
+                continue
+
+            uom_factor = mapping.mintsoft_uom_factor if (mapping and mapping.mintsoft_uom_factor > 0) else 1.0
+            final_qty_float = converted_qty * uom_factor
+
+            if not math.isclose(final_qty_float, round(final_qty_float), rel_tol=1e-5, abs_tol=1e-5):
+                errors.append(
+                    _("Product '%(prod)s' quantity %(qty)s converts to non-integer Mintsoft quantity %(mqty)s.")
+                    % {'prod': product.display_name, 'qty': raw_qty, 'mqty': final_qty_float}
+                )
+                continue
+
+            mintsoft_qty = int(round(final_qty_float))
+            if mintsoft_qty <= 0:
+                errors.append(_("Product '%s' has zero or negative Mintsoft quantity.") % product.display_name)
+                continue
+
+            sku = (mapping.mintsoft_sku if mapping and mapping.mintsoft_sku else (product.default_code or '')).strip()
+            if not sku:
+                errors.append(
+                    _("Missing SKU on product '%s'. Configure an Internal Reference (SKU) or Kays Product Mapping.")
+                    % product.display_name
+                )
+                continue
+
+            sale_line = move.sale_line_id
+            unit_price_ex_vat = round(float(sale_line.price_unit or 0.0), 4) if sale_line else round(float(product.lst_price or 0.0), 4)
+            unit_vat = round(float(sale_line.price_tax or 0.0) / mintsoft_qty, 4) if (sale_line and mintsoft_qty) else 0.0
+            line_discount = round(
+                float(sale_line.price_unit or 0.0) * raw_qty * (float(sale_line.discount or 0.0) / 100.0), 2
+            ) if sale_line else 0.0
+
+            total_order_val += unit_price_ex_vat * mintsoft_qty
+
+            item_dict = {
+                'move_id': move.id,
+                'sale_line_id': sale_line.id if sale_line else False,
+                'product_id': product.id,
+                'product_mapping_id': mapping.id if mapping else False,
+                'SKU': sku,
+                'ProductId': mapping.mintsoft_product_id if (mapping and mapping.mintsoft_product_id > 0) else 0,
+                'Quantity': mintsoft_qty,
+                'UnitPrice': unit_price_ex_vat,
+                'UnitPriceVat': unit_vat,
+                'Discount': line_discount,
+                'Details': (sale_line.name or move.name or product.name or sku)[:250] if sale_line else (product.name or sku)[:250],
+            }
+            physical_items.append(item_dict)
+
+        if not physical_items:
+            errors.append(_("Delivery '%s' contains no eligible physical product lines for warehouse fulfilment.") % picking.name)
+
+        # 9. Currency
+        currency = sale_order.currency_id or instance.currency_id or picking.company_id.currency_id
+        if not currency or not currency.name:
+            errors.append(_("Order currency is missing."))
+
+        if not external_ref:
+            base_ref = self.compute_external_reference(sale_order, instance)
+            external_ref = f"{base_ref}-{picking.name.split('/')[-1]}"[:50]
+
+        return {
+            'valid': len(errors) == 0,
+            'errors': errors,
+            'warnings': warnings,
+            'resolved': {
+                'external_reference': external_ref,
+                'warehouse_id': warehouse_id,
+                'warehouse_mapping_id': wh_mapping.id if wh_mapping else False,
+                'carrier_mapping_id': carrier_mapping.id if carrier_mapping else False,
+                'courier_service_id': courier_service_id,
+                'courier_service_name': courier_service_name,
+                'region': region,
+                'order_total': round(total_order_val, 2),
+                'shipping_ex_vat': 0.0,
+                'shipping_vat': 0.0,
+                'discount_ex_vat': 0.0,
+                'currency_code': currency.name if currency else 'GBP',
+                'items': physical_items,
+            },
+        }
+
     # -------------------------------------------------------------------------
     # Payload Construction
     # -------------------------------------------------------------------------
@@ -449,6 +691,89 @@ class OrderService:
             payload['RequiredDeliveryDate'] = sale_order.commitment_date.strftime('%Y-%m-%dT%H:%M:%SZ')
 
         # Register ConnectAction callback on order creation when webhooks are enabled
+        if instance.enable_webhooks and instance.register_connect_action_on_order and instance.webhook_url:
+            connect_action = {
+                'Type': 'Despatch',
+                'SourceOrderId': resolved['external_reference'],
+                'Complete': False,
+                'ExtraCode1': instance.webhook_url,
+            }
+            if instance.connect_action_account_id and instance.connect_action_account_id > 0:
+                connect_action['AccountId'] = instance.connect_action_account_id
+            payload['ConnectAction'] = connect_action
+
+        return payload
+
+    def build_mintsoft_subscription_delivery_payload(self, picking, instance, validation_result=None):
+        """Build the exact Mintsoft PUT /api/Order payload for a subscription delivery picking."""
+        if not validation_result:
+            validation_result = self.validate_subscription_delivery(picking, instance, is_manual=True)
+
+        resolved = validation_result['resolved']
+        sale_order = picking.sale_id
+        ship_partner = picking.partner_id or sale_order.partner_shipping_id or sale_order.partner_id
+        first_name, last_name = self.split_person_name(ship_partner.name or ship_partner.commercial_company_name)
+
+        order_items_payload = []
+        for item in resolved['items']:
+            line_payload = {
+                'SKU': item['SKU'],
+                'Quantity': item['Quantity'],
+                'UnitPrice': item['UnitPrice'],
+                'UnitPriceVat': item['UnitPriceVat'],
+                'Discount': item['Discount'],
+                'Details': item['Details'],
+            }
+            if item.get('ProductId') and item['ProductId'] > 0:
+                line_payload['ProductId'] = item['ProductId']
+            order_items_payload.append(line_payload)
+
+        tags = ['ODOO19', 'SUBSCRIPTION']
+        if instance.environment == 'test_client':
+            tags.append('TEST_ORDER')
+
+        payload = {
+            'OrderNumber': resolved['external_reference'],
+            'ExternalOrderReference': resolved['external_reference'],
+            'FirstName': first_name,
+            'LastName': last_name,
+            'CompanyName': (ship_partner.commercial_company_name or '')[:100] if ship_partner.is_company or ship_partner.parent_id else '',
+            'Address1': (ship_partner.street or '')[:100],
+            'Address2': (ship_partner.street2 or '')[:100],
+            'Town': (ship_partner.city or '')[:100],
+            'County': (ship_partner.state_id.name if ship_partner.state_id else '')[:100],
+            'PostCode': (ship_partner.zip or '')[:20],
+            'Country': (ship_partner.country_id.code if ship_partner.country_id else 'GB')[:2],
+            'Email': (ship_partner.email or sale_order.partner_id.email or '')[:100],
+            'Phone': (ship_partner.phone or sale_order.partner_id.phone or '')[:50],
+            'WarehouseId': resolved['warehouse_id'],
+            'Currency': resolved['currency_code'],
+            'OrderValue': resolved['order_total'],
+            'TotalVat': 0.0,
+            'ShippingTotalExVat': 0.0,
+            'ShippingTotalVat': 0.0,
+            'DiscountTotalExVat': 0.0,
+            'DeliveryNotes': (picking.note or sale_order.kays_delivery_notes or '')[:500],
+            'Tags': ','.join(tags),
+            'OrderItems': order_items_payload,
+        }
+
+        if instance.mintsoft_client_id and instance.mintsoft_client_id > 0:
+            payload['ClientId'] = instance.mintsoft_client_id
+
+        if resolved['courier_service_id'] and resolved['courier_service_id'] > 0:
+            payload['CourierServiceId'] = resolved['courier_service_id']
+        if resolved['courier_service_name']:
+            payload['CourierService'] = resolved['courier_service_name']
+
+        if instance.mintsoft_channel_id and instance.mintsoft_channel_id > 0:
+            payload['ChannelId'] = instance.mintsoft_channel_id
+        elif instance.mintsoft_channel_name:
+            payload['Channel'] = instance.mintsoft_channel_name
+
+        if picking.scheduled_date:
+            payload['RequiredDeliveryDate'] = picking.scheduled_date.strftime('%Y-%m-%dT%H:%M:%SZ')
+
         if instance.enable_webhooks and instance.register_connect_action_on_order and instance.webhook_url:
             connect_action = {
                 'Type': 'Despatch',
@@ -830,6 +1155,288 @@ class OrderService:
         for line in kays_order.line_ids:
             if line.sku in sku_to_id:
                 line.mintsoft_order_item_id = sku_to_id[line.sku]
+
+    def export_subscription_delivery(self, picking, instance=None, is_manual=False):
+        """
+        Validate, deduplicate, and export an eligible subscription delivery (stock.picking) to Mintsoft.
+        Assigns a deterministic external reference with cycle suffix (e.g. S10327-R2)
+        and creates/updates a kays.mintsoft.order record linked directly to this picking.
+        """
+        picking.ensure_one()
+        sale_order = picking.sale_id
+        if not sale_order:
+            if is_manual:
+                raise UserError(_("Delivery '%s' is not linked to a Sales Order / Subscription.") % picking.name)
+            return False
+
+        instance = instance or sale_order.kays_instance_id or picking.company_id._get_default_kays_instance(sale_order=sale_order)
+        if not instance:
+            if is_manual:
+                raise UserError(_("No Kays Logistics connection is configured for company '%s'.") % picking.company_id.display_name)
+            return False
+
+        # Row-level lock on picking
+        try:
+            self.env.cr.execute(
+                "SELECT id FROM stock_picking WHERE id = %s FOR UPDATE NOWAIT",
+                [picking.id],
+            )
+        except Exception as lock_exc:
+            raise UserError(
+                _("Delivery '%s' is currently being processed by another worker.") % picking.name
+            ) from lock_exc
+
+        kays_order = picking.kays_order_id or self.env['kays.mintsoft.order'].search([
+            ('picking_id', '=', picking.id),
+            ('instance_id', '=', instance.id),
+        ], limit=1)
+
+        if kays_order:
+            if kays_order.export_status == 'sent' and kays_order.mintsoft_order_id > 0:
+                if is_manual:
+                    raise UserError(
+                        _("Delivery '%(pick)s' has already been exported to Mintsoft (ID: %(id)s).")
+                        % {'pick': picking.name, 'id': kays_order.mintsoft_order_id}
+                    )
+                return kays_order
+
+            if kays_order.export_status == 'unknown_outcome':
+                reconciled = self.reconcile_unknown_outcome_order(kays_order)
+                if reconciled or kays_order.export_status == 'unknown_outcome':
+                    return kays_order
+
+        # Calculate cycle number and external reference
+        outgoing_pickings = sale_order.picking_ids.filtered(
+            lambda p: p.picking_type_id.code == 'outgoing' and p.state != 'cancel'
+        ).sorted('id')
+        try:
+            cycle_num = list(outgoing_pickings.ids).index(picking.id) + 1
+        except ValueError:
+            cycle_num = len(outgoing_pickings) or 1
+
+        base_ref = self.compute_external_reference(sale_order, instance)
+        if kays_order and kays_order.external_order_reference:
+            external_ref = kays_order.external_order_reference
+        else:
+            if cycle_num > 1:
+                external_ref = f"{base_ref}-R{cycle_num}"[:50]
+            else:
+                existing_base = self.env['kays.mintsoft.order'].search([
+                    ('name', '=', base_ref),
+                    ('instance_id', '=', instance.id),
+                    ('picking_id', '!=', picking.id),
+                ], limit=1)
+                if existing_base or getattr(sale_order, 'is_subscription', False):
+                    external_ref = f"{base_ref}-R1"[:50]
+                else:
+                    external_ref = base_ref[:50]
+
+        val_res = self.validate_subscription_delivery(picking, instance, is_manual=is_manual, external_ref=external_ref)
+        resolved = val_res['resolved']
+
+        if kays_order:
+            kays_order.write({
+                'export_status': 'validating',
+                'name': external_ref,
+                'external_order_reference': external_ref,
+                'is_subscription_delivery': True,
+                'subscription_cycle': cycle_num,
+                'picking_id': picking.id,
+                'mintsoft_warehouse_id': resolved.get('warehouse_id', instance.mintsoft_warehouse_id),
+                'warehouse_mapping_id': resolved.get('warehouse_mapping_id', False),
+                'carrier_mapping_id': resolved.get('carrier_mapping_id', False),
+                'mintsoft_courier_service_id': resolved.get('courier_service_id', 0),
+                'mintsoft_courier_service_name': resolved.get('courier_service_name', ''),
+            })
+        else:
+            kays_order = self.env['kays.mintsoft.order'].create({
+                'name': external_ref,
+                'external_order_reference': external_ref,
+                'idempotency_key': f"{instance.id}:{external_ref}",
+                'sale_order_id': sale_order.id,
+                'picking_id': picking.id,
+                'is_subscription_delivery': True,
+                'subscription_cycle': cycle_num,
+                'company_id': picking.company_id.id,
+                'instance_id': instance.id,
+                'partner_id': sale_order.partner_id.id,
+                'shipping_partner_id': (picking.partner_id or sale_order.partner_shipping_id or sale_order.partner_id).id,
+                'order_date': picking.scheduled_date or fields.Datetime.now(),
+                'currency_id': sale_order.currency_id.id,
+                'order_total': resolved.get('order_total', 0.0),
+                'export_status': 'validating',
+                'fulfilment_status': 'unknown',
+                'mintsoft_client_id': instance.mintsoft_client_id,
+                'mintsoft_warehouse_id': resolved.get('warehouse_id', instance.mintsoft_warehouse_id),
+                'warehouse_mapping_id': resolved.get('warehouse_mapping_id', False),
+                'carrier_mapping_id': resolved.get('carrier_mapping_id', False),
+                'mintsoft_courier_service_id': resolved.get('courier_service_id', 0),
+                'mintsoft_courier_service_name': resolved.get('courier_service_name', ''),
+            })
+
+        picking.kays_order_id = kays_order.id
+        sale_order.kays_instance_id = instance.id
+
+        if not val_res['valid']:
+            err_msg = "\n".join(val_res['errors'])
+            kays_order.write({
+                'export_status': 'failed',
+                'last_error': err_msg,
+                'last_sync_at': fields.Datetime.now(),
+            })
+            if is_manual:
+                raise UserError(_("Validation failed for delivery '%(pick)s':\n%(err)s") % {'pick': picking.name, 'err': err_msg})
+            return kays_order
+
+        payload = self.build_mintsoft_subscription_delivery_payload(picking, instance, validation_result=val_res)
+        sanitized_preview = json.dumps(sanitize_payload(payload), indent=2)
+
+        kays_order.line_ids.unlink()
+        line_vals = []
+        for item in resolved['items']:
+            line_vals.append({
+                'kays_order_id': kays_order.id,
+                'sale_line_id': item.get('sale_line_id'),
+                'product_id': item['product_id'],
+                'product_mapping_id': item['product_mapping_id'],
+                'sku': item['SKU'],
+                'mintsoft_product_id': item['ProductId'],
+                'quantity': item['Quantity'],
+                'unit_price': item['UnitPrice'],
+                'unit_vat': item['UnitPriceVat'],
+                'discount': item['Discount'],
+            })
+        if line_vals:
+            self.env['kays.mintsoft.order.line'].create(line_vals)
+
+        kays_order.payload_preview = sanitized_preview
+
+        if instance.environment == 'dry_run':
+            dry_summary = {
+                'mode': 'dry_run',
+                'valid': True,
+                'warnings': val_res['warnings'],
+                'message': 'Dry Run validation succeeded for subscription delivery. No write request was sent to Mintsoft.',
+                'external_reference': external_ref,
+                'item_count': len(resolved['items']),
+            }
+            kays_order.write({
+                'export_status': 'pending',
+                'response_summary': json.dumps(dry_summary, indent=2),
+                'last_error': False,
+                'last_sync_at': fields.Datetime.now(),
+            })
+            return kays_order
+
+        client = MintsoftClient(instance)
+
+        remote_matches = self.check_remote_duplicate(client, instance, external_ref)
+        if remote_matches:
+            first_match = remote_matches[0]
+            ms_id = first_match.get('ID') or first_match.get('OrderId')
+            kays_order.write({
+                'mintsoft_order_id': ms_id,
+                'mintsoft_order_number': first_match.get('OrderNumber') or external_ref,
+                'export_status': 'sent',
+                'fulfilment_status': 'received',
+                'response_summary': json.dumps(sanitize_payload(remote_matches), indent=2),
+                'last_error': False,
+                'last_sync_at': fields.Datetime.now(),
+            })
+            self.sync_order_status(kays_order)
+            return kays_order
+
+        kays_order.export_status = 'sending'
+        try:
+            response_data = client.request(
+                'PUT',
+                '/api/Order',
+                json_payload=payload,
+                operation='create_subscription_delivery',
+                sale_order=sale_order,
+                kays_order=kays_order,
+            )
+        except MintsoftAPIError as api_err:
+            if api_err.unknown_outcome:
+                kays_order.write({
+                    'export_status': 'unknown_outcome',
+                    'last_error': _(
+                        "Subscription delivery submission outcome unknown after timeout/server error: %s."
+                    ) % api_err.message,
+                    'last_sync_at': fields.Datetime.now(),
+                })
+            else:
+                kays_order.write({
+                    'export_status': 'failed',
+                    'last_error': api_err.message,
+                    'retry_count': kays_order.retry_count + 1,
+                    'last_sync_at': fields.Datetime.now(),
+                })
+            if is_manual:
+                raise UserError(_("Mintsoft export failed: %s") % api_err.message) from api_err
+            return kays_order
+        except Exception as exc:
+            kays_order.write({
+                'export_status': 'failed',
+                'last_error': str(exc),
+                'last_sync_at': fields.Datetime.now(),
+            })
+            if is_manual:
+                raise
+            return kays_order
+
+        results_list = response_data if isinstance(response_data, list) else ([response_data] if isinstance(response_data, dict) else [])
+        if not results_list:
+            kays_order.write({
+                'export_status': 'failed',
+                'last_error': _("Empty or unexpected response from Mintsoft PUT /api/Order."),
+                'response_summary': json.dumps(sanitize_payload(response_data), indent=2),
+                'last_sync_at': fields.Datetime.now(),
+            })
+            return kays_order
+
+        successful_results = [
+            r for r in results_list
+            if isinstance(r, dict) and (r.get('Success') is True or (r.get('OrderId') and int(r.get('OrderId') or 0) > 0))
+        ]
+
+        if not successful_results:
+            err_messages = [
+                r.get('Message') or r.get('OrderStatus') or 'Subscription delivery creation rejected by Mintsoft'
+                for r in results_list if isinstance(r, dict)
+            ]
+            kays_order.write({
+                'export_status': 'failed',
+                'last_error': "; ".join(err_messages),
+                'response_summary': json.dumps(sanitize_payload(results_list), indent=2),
+                'last_sync_at': fields.Datetime.now(),
+            })
+            return kays_order
+
+        primary_res = successful_results[0]
+        primary_ms_id = int(primary_res.get('OrderId') or 0)
+        status_id = int(primary_res.get('OrderStatusId') or 0)
+        status_name = primary_res.get('OrderStatus') or 'New'
+        mapped_status = self.env['kays.mintsoft.status.mapping'].map_mintsoft_status(
+            instance, status_id, status_name
+        )
+
+        kays_order.write({
+            'mintsoft_order_id': primary_ms_id,
+            'dropship_order_id': int(primary_res.get('DropShipOrderId') or 0),
+            'mintsoft_order_number': primary_res.get('OrderNumber') or external_ref,
+            'export_status': 'sent',
+            'fulfilment_status': mapped_status,
+            'mintsoft_status_id': status_id,
+            'mintsoft_status_name': status_name,
+            'part_number': 1,
+            'total_parts': len(successful_results),
+            'response_summary': json.dumps(sanitize_payload(results_list), indent=2),
+            'last_error': False,
+            'last_sync_at': fields.Datetime.now(),
+        })
+        self._update_order_line_item_ids(kays_order, primary_res.get('OrderItems') or [])
+        return kays_order
 
     # -------------------------------------------------------------------------
     # Unknown Outcome Reconciliation

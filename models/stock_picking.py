@@ -1,9 +1,17 @@
+import logging
 from odoo import fields, models, _
+
+_logger = logging.getLogger(__name__)
 
 
 class StockPicking(models.Model):
     _inherit = 'stock.picking'
 
+    kays_enabled = fields.Boolean(
+        related='company_id.kays_enabled',
+        string='Kays Enabled',
+        readonly=True,
+    )
     kays_order_id = fields.Many2one(
         'kays.mintsoft.order',
         string='Kays Fulfilment Order',
@@ -64,6 +72,49 @@ class StockPicking(models.Model):
         if self.kays_order_id:
             return self.kays_order_id.action_refresh_tracking()
         return True
+
+    def action_kays_send_to_kays(self):
+        self.ensure_one()
+        from ..services.order_service import OrderService
+        svc = OrderService(self.env)
+        svc.export_subscription_delivery(self, is_manual=True)
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': _('Kays Logistics'),
+                'message': _('Delivery order sent to Kays Logistics successfully.'),
+                'type': 'success',
+                'sticky': False,
+            }
+        }
+
+    def action_confirm(self):
+        res = super().action_confirm()
+        for picking in self:
+            picking._kays_check_auto_export_delivery()
+        return res
+
+    def _kays_check_auto_export_delivery(self):
+        self.ensure_one()
+        if self.picking_type_id.code != 'outgoing':
+            return
+        sale_order = self.sale_id
+        if not sale_order or not sale_order.company_id.kays_enabled:
+            return
+        instance = sale_order.kays_instance_id or sale_order.company_id._get_default_kays_instance(sale_order=sale_order)
+        if not instance or not instance.active or not instance.enable_integration or not instance.enable_subscription_export:
+            return
+        if self.kays_order_id and self.kays_order_id.export_status == 'sent':
+            return
+        from ..services.order_service import OrderService
+        svc = OrderService(self.env)
+        pay_ok, _reason = svc.check_payment_eligibility(sale_order, instance)
+        if pay_ok:
+            try:
+                svc.export_subscription_delivery(self, instance=instance, is_manual=False)
+            except Exception as exc:
+                _logger.warning("Auto-export of delivery %s to Kays skipped/failed: %s", self.name, exc)
 
 
 class StockMove(models.Model):

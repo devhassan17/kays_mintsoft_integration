@@ -104,6 +104,7 @@
                             <group>
                                 <group string="Order &amp; Fulfilment Features">
                                     <field name="enable_auto_order_export" widget="boolean_toggle"/>
+                                    <field name="enable_subscription_export" widget="boolean_toggle"/>
                                     <field name="enable_manual_order_export" widget="boolean_toggle"/>
                                     <field name="enable_order_status_sync" widget="boolean_toggle"/>
                                     <field name="enable_shipment_sync" widget="boolean_toggle"/>

@@ -266,3 +266,88 @@ class TestKaysOrderExport(KaysMintsoftTestCommon):
         self.assertFalse(svc.check_payment_eligibility(order, self.instance_uk)[0])
         order.kays_payment_approved = True
         self.assertTrue(svc.check_payment_eligibility(order, self.instance_uk)[0])
+
+    @patch('requests.Session.request')
+    def test_20_subscription_renewal_delivery_export(self, mock_request):
+        """Test 20: Verify export of a recurring subscription delivery (stock.picking) to Mintsoft."""
+        def side_effect(**kwargs):
+            url = kwargs.get('url', '')
+            method = kwargs.get('method', '')
+            if method == 'GET' and ('/api/Order/Search' in url or '/api/Order/GetOrderId' in url):
+                return MockHTTPResponse(200, [])
+            if method == 'PUT' and url.endswith('/api/Order'):
+                return MockHTTPResponse(200, [{
+                    'OrderId': 98001,
+                    'OrderNumber': kwargs['json']['OrderNumber'],
+                    'Success': True,
+                    'OrderStatusId': 1,
+                    'Message': 'Subscription Delivery Created',
+                    'OrderItems': [{
+                        'OrderItemId': 88001,
+                        'SKU': 'MOYEE-ESP-1KG',
+                        'Quantity': 2,
+                    }],
+                }])
+            return MockHTTPResponse(200, [])
+
+        mock_request.side_effect = side_effect
+        self.instance_uk.enable_auto_order_export = False
+        self.instance_uk.enable_subscription_export = True
+
+        sale_order = self._create_confirmed_sale_order(qty=2.0, confirm=True)
+        picking = sale_order.picking_ids.filtered(lambda p: p.picking_type_id.code == 'outgoing')[:1]
+        self.assertTrue(picking)
+
+        svc = OrderService(self.env)
+        kays_order = svc.export_subscription_delivery(picking, instance=self.instance_uk, is_manual=True)
+
+        self.assertEqual(kays_order.export_status, 'sent')
+        self.assertEqual(kays_order.mintsoft_order_id, 98001)
+        self.assertTrue(kays_order.is_subscription_delivery)
+        self.assertEqual(kays_order.picking_id, picking)
+        self.assertEqual(picking.kays_order_id, kays_order)
+        self.assertTrue(kays_order.external_order_reference.startswith(sale_order.name))
+
+    @patch('requests.Session.request')
+    def test_21_payment_trigger_exports_subscription_delivery(self, mock_request):
+        """Test 21: Verify payment completion hook automatically triggers export of unexported subscription pickings."""
+        def side_effect(**kwargs):
+            url = kwargs.get('url', '')
+            method = kwargs.get('method', '')
+            if method == 'GET' and ('/api/Order/Search' in url or '/api/Order/GetOrderId' in url):
+                return MockHTTPResponse(200, [])
+            if method == 'PUT' and url.endswith('/api/Order'):
+                return MockHTTPResponse(200, [{
+                    'OrderId': 98002,
+                    'OrderNumber': kwargs['json']['OrderNumber'],
+                    'Success': True,
+                    'OrderStatusId': 1,
+                    'Message': 'Subscription Delivery Auto Created',
+                }])
+            return MockHTTPResponse(200, [])
+
+        mock_request.side_effect = side_effect
+        self.instance_uk.enable_auto_order_export = False
+        self.instance_uk.enable_subscription_export = True
+
+        sale_order = self._create_confirmed_sale_order(qty=2.0, confirm=True)
+        picking = sale_order.picking_ids.filtered(lambda p: p.picking_type_id.code == 'outgoing')[:1]
+        self.assertTrue(picking)
+        self.assertFalse(picking.kays_order_id)
+
+        payment_tx = self.env['payment.transaction'].create({
+            'reference': f'TX-SUB-{sale_order.name}',
+            'amount': sale_order.amount_total,
+            'currency_id': sale_order.currency_id.id,
+            'provider_id': self.env['payment.provider'].search([], limit=1).id or False,
+            'partner_id': sale_order.partner_id.id,
+            'sale_order_ids': [(6, 0, sale_order.ids)],
+            'state': 'draft',
+        })
+        payment_tx.state = 'done'
+        payment_tx._kays_trigger_post_payment_export()
+
+        self.assertTrue(picking.kays_order_id)
+        self.assertEqual(picking.kays_order_id.export_status, 'sent')
+        self.assertEqual(picking.kays_order_id.mintsoft_order_id, 98002)
+        self.assertTrue(picking.kays_order_id.is_subscription_delivery)

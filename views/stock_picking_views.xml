@@ -8,14 +8,29 @@
         <field name="model">stock.picking</field>
         <field name="inherit_id" ref="stock.view_picking_form"/>
         <field name="arch" type="xml">
+            <xpath expr="//header" position="inside">
+                <field name="kays_enabled" invisible="1"/>
+                <button name="action_kays_send_to_kays"
+                        string="Send Delivery to Kays"
+                        type="object"
+                        class="btn-primary"
+                        invisible="not kays_enabled or picking_type_code != 'outgoing' or state in ('draft', 'cancel') or (kays_order_id and kays_delivery_status not in (False, 'cancelled'))"/>
+            </xpath>
             <xpath expr="//notebook" position="inside">
-                <page string="Kays Logistics" name="kays_picking_tab" invisible="not kays_order_id and not kays_shipment_ids">
-                    <div class="mb-3">
+                <page string="Kays Logistics" name="kays_picking_tab" invisible="not kays_enabled and not kays_order_id and not kays_shipment_ids">
+                    <div class="mb-3 d-flex gap-2">
+                        <button name="action_kays_send_to_kays"
+                                string="Send Delivery to Kays"
+                                type="object"
+                                class="btn-primary"
+                                icon="fa-paper-plane"
+                                invisible="picking_type_code != 'outgoing' or state in ('draft', 'cancel') or (kays_order_id and kays_delivery_status not in (False, 'cancelled'))"/>
                         <button name="action_kays_refresh_picking_tracking"
                                 string="Refresh Kays Tracking &amp; Shipment Status"
                                 type="object"
-                                class="btn btn-secondary"
-                                icon="fa-refresh"/>
+                                class="btn-secondary"
+                                icon="fa-refresh"
+                                invisible="not kays_order_id"/>
                     </div>
                     <group>
                         <group string="Kays Fulfilment Link">

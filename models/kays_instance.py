@@ -245,6 +245,12 @@ class KaysMintsoftInstance(models.Model):
         default=True,
         tracking=True,
     )
+    enable_subscription_export = fields.Boolean(
+        string='Subscription Delivery Export',
+        default=True,
+        tracking=True,
+        help='Automatically export recurring subscription deliveries to Kays upon renewal payment.',
+    )
     enable_manual_order_export = fields.Boolean(
         string='Manual Order Export',
         default=True,

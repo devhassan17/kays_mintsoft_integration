@@ -55,6 +55,11 @@ class ResConfigSettings(models.TransientModel):
         readonly=False,
         string='Automatic Order Export',
     )
+    kays_enable_subscription_export = fields.Boolean(
+        related='kays_default_instance_id.enable_subscription_export',
+        readonly=False,
+        string='Subscription Delivery Export',
+    )
     kays_enable_manual_order_export = fields.Boolean(
         related='kays_default_instance_id.enable_manual_order_export',
         readonly=False,
