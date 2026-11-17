@@ -391,7 +391,7 @@ class KaysMintsoftInstance(models.Model):
             ('block_unmapped', 'Block Unmapped Bundles'),
         ],
         string='Bundle / Kit Mapping Policy',
-        default='mintsoft_bundle_sku',
+        default='explode_kit_lines',
         required=True,
     )
 

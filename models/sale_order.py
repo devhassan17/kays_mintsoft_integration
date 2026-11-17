@@ -5,6 +5,7 @@ from odoo.exceptions import UserError
 
 from ..services.mintsoft_client import sanitize_payload
 from ..services.order_service import OrderService
+from ..services.pack_utils import expand_to_leaf_components
 
 _logger = logging.getLogger(__name__)
 
@@ -572,29 +573,31 @@ class SaleOrder(models.Model):
             )
             move_fields = self.env['stock.move']._fields
             for line in physical_lines:
-                line_uom = (
-                    getattr(line, 'product_uom_id', None)
-                    or getattr(line, 'product_uom', None)
-                    or line.product_id.uom_id
-                )
-                raw_move_vals = {
-                    'name': line.name or line.product_id.display_name,
-                    'product_id': line.product_id.id,
-                    'product_uom_qty': line.product_uom_qty,
-                    'product_uom': line_uom.id,
-                    'product_uom_id': line_uom.id,
-                    'picking_id': picking.id,
-                    'picking_type_id': picking_type.id if picking_type else False,
-                    'sale_line_id': line.id,
-                    'company_id': self.company_id.id,
-                    'location_id': source_loc.id,
-                    'location_dest_id': customer_loc.id,
-                    'origin': picking.origin or f"{self.name} - R{cycle_num or 2}",
-                    'description_picking': line.name or line.product_id.display_name,
-                    'procure_method': 'make_to_stock',
-                }
-                move_vals = {k: v for k, v in raw_move_vals.items() if k in move_fields and v is not False}
-                self.env['stock.move'].with_context(kays_skip_picking_auto_export=True).create(move_vals)
+                leaves = expand_to_leaf_components(
+                    self.env, self.company_id.id, line.product_id, line.product_uom_qty
+                ) or [(line.product_id, line.product_uom_qty)]
+                for comp_product, comp_qty in leaves:
+                    if not comp_product or comp_product.type == 'service' or comp_qty <= 0:
+                        continue
+                    comp_uom = comp_product.uom_id
+                    raw_move_vals = {
+                        'name': comp_product.display_name,
+                        'product_id': comp_product.id,
+                        'product_uom_qty': comp_qty,
+                        'product_uom': comp_uom.id,
+                        'product_uom_id': comp_uom.id,
+                        'picking_id': picking.id,
+                        'picking_type_id': picking_type.id if picking_type else False,
+                        'sale_line_id': line.id,
+                        'company_id': self.company_id.id,
+                        'location_id': source_loc.id,
+                        'location_dest_id': customer_loc.id,
+                        'origin': picking.origin or f"{self.name} - R{cycle_num or 2}",
+                        'description_picking': comp_product.display_name,
+                        'procure_method': 'make_to_stock',
+                    }
+                    move_vals = {k: v for k, v in raw_move_vals.items() if k in move_fields and v is not False}
+                    self.env['stock.move'].with_context(kays_skip_picking_auto_export=True).create(move_vals)
 
         draft_moves = picking.move_ids.filtered(lambda m: m.state == 'draft')
         if draft_moves:

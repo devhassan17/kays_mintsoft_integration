@@ -1,4 +1,5 @@
 from . import mintsoft_client
+from . import pack_utils
 from . import order_service
 from . import product_service
 from . import inventory_service

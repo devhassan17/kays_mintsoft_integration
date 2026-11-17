@@ -10,6 +10,7 @@ from .mintsoft_client import (
     MintsoftDryRunBlockedError,
     sanitize_payload,
 )
+from .pack_utils import expand_to_leaf_components, is_pack_like, resolve_product_sku
 
 _logger = logging.getLogger(__name__)
 
@@ -297,6 +298,71 @@ class OrderService:
                 ('active', '=', True),
             ], limit=1)
 
+            # Check if product is a Pack / Kit (Phantom BoM or OCA product_pack)
+            pack_like = is_pack_like(self.env, product, company.id)
+            should_explode_pack = pack_like and (
+                instance.bundle_mapping_policy == 'explode_kit_lines'
+                or not (mapping and mapping.mintsoft_sku)
+            )
+
+            if should_explode_pack:
+                leaves = expand_to_leaf_components(self.env, company.id, product, converted_qty)
+                if not leaves:
+                    errors.append(_("Pack product '%s' has no resolvable component lines.") % product.display_name)
+                    continue
+                total_leaf_qty = sum(float(q or 0.0) for _c, q in leaves if q and q > 0) or 1.0
+                line_discount_total = round(
+                    float(line.price_unit or 0.0) * raw_qty * (float(line.discount or 0.0) / 100.0), 2
+                )
+                discount_ex_vat += line_discount_total
+
+                for comp_prod, comp_qty in leaves:
+                    if not comp_prod or comp_prod.type == 'service':
+                        continue
+                    comp_mapping = self.env['kays.mintsoft.product.mapping'].search([
+                        ('instance_id', '=', instance.id),
+                        ('product_id', '=', comp_prod.id),
+                        ('active', '=', True),
+                    ], limit=1)
+                    if comp_mapping and comp_mapping.mapping_status == 'disabled':
+                        errors.append(_("Product mapping for pack component '%s' is disabled.") % comp_prod.display_name)
+                        continue
+                    comp_factor = comp_mapping.mintsoft_uom_factor if (comp_mapping and comp_mapping.mintsoft_uom_factor > 0) else 1.0
+                    comp_final_float = float(comp_qty or 0.0) * comp_factor
+                    if not math.isclose(comp_final_float, round(comp_final_float), rel_tol=1e-5, abs_tol=1e-5):
+                        errors.append(
+                            _("Pack component '%(prod)s' quantity %(qty)s converts to non-integer Mintsoft quantity %(mqty)s.")
+                            % {'prod': comp_prod.display_name, 'qty': comp_qty, 'mqty': comp_final_float}
+                        )
+                        continue
+                    comp_ms_qty = int(round(comp_final_float))
+                    if comp_ms_qty <= 0:
+                        continue
+                    comp_sku = resolve_product_sku(comp_prod, comp_mapping)
+                    if not comp_sku:
+                        errors.append(
+                            _("Missing SKU on pack component '%(comp)s' (from pack '%(pack)s').")
+                            % {'comp': comp_prod.display_name, 'pack': product.display_name}
+                        )
+                        continue
+                    share = float(comp_qty or 0.0) / total_leaf_qty
+                    comp_unit_price = round((float(line.price_subtotal or 0.0) * share) / comp_ms_qty, 4)
+                    comp_unit_vat = round((float(line.price_tax or 0.0) * share) / comp_ms_qty, 4)
+                    comp_discount = round(line_discount_total * share, 2)
+                    physical_items.append({
+                        'sale_line_id': line.id,
+                        'product_id': comp_prod.id,
+                        'product_mapping_id': comp_mapping.id if comp_mapping else False,
+                        'SKU': comp_sku,
+                        'ProductId': comp_mapping.mintsoft_product_id if (comp_mapping and comp_mapping.mintsoft_product_id > 0) else 0,
+                        'Quantity': comp_ms_qty,
+                        'UnitPrice': comp_unit_price,
+                        'UnitPriceVat': comp_unit_vat,
+                        'Discount': comp_discount,
+                        'Details': f"{comp_prod.display_name} ({product.display_name})"[:250],
+                    })
+                continue
+
             if mapping and mapping.mapping_status == 'disabled':
                 errors.append(_("Product mapping for '%s' is disabled.") % product.display_name)
                 continue
@@ -317,7 +383,7 @@ class OrderService:
                 errors.append(_("Product '%s' has zero or negative Mintsoft quantity.") % product.display_name)
                 continue
 
-            sku = (mapping.mintsoft_sku if mapping and mapping.mintsoft_sku else (product.default_code or '')).strip()
+            sku = resolve_product_sku(product, mapping)
             if not sku:
                 errors.append(
                     _("Missing SKU on product '%s'. Configure an Internal Reference (SKU) or Kays Product Mapping.")
@@ -550,6 +616,8 @@ class OrderService:
                 ]),
             })()
 
+        seen_sale_line_ids = set()
+
         for move in moves:
             product = move.product_id
             if not product or product.type == 'service':
@@ -579,6 +647,80 @@ class OrderService:
                 ('active', '=', True),
             ], limit=1)
 
+            sale_line = move.sale_line_id
+            pack_like = is_pack_like(self.env, product, company.id)
+            should_explode_pack = pack_like and (
+                instance.bundle_mapping_policy == 'explode_kit_lines'
+                or not (mapping and mapping.mintsoft_sku)
+            )
+
+            if should_explode_pack:
+                leaves = expand_to_leaf_components(self.env, company.id, product, converted_qty)
+                if not leaves:
+                    errors.append(_("Pack product '%s' has no resolvable component lines.") % product.display_name)
+                    continue
+                total_leaf_qty = sum(float(q or 0.0) for _c, q in leaves if q and q > 0) or 1.0
+                line_sub = float(sale_line.price_subtotal or 0.0) if sale_line else float(product.lst_price or 0.0) * raw_qty
+                line_tax = float(sale_line.price_tax or 0.0) if sale_line else 0.0
+                line_disc = round(
+                    float(sale_line.price_unit or 0.0) * raw_qty * (float(sale_line.discount or 0.0) / 100.0), 2
+                ) if sale_line else 0.0
+
+                if not sale_line or sale_line.id not in seen_sale_line_ids:
+                    if sale_line:
+                        seen_sale_line_ids.add(sale_line.id)
+                    total_order_val += line_sub
+                    total_items_vat += line_tax
+                    discount_ex_vat += line_disc
+
+                for comp_prod, comp_qty in leaves:
+                    if not comp_prod or comp_prod.type == 'service':
+                        continue
+                    comp_mapping = self.env['kays.mintsoft.product.mapping'].search([
+                        ('instance_id', '=', instance.id),
+                        ('product_id', '=', comp_prod.id),
+                        ('active', '=', True),
+                    ], limit=1)
+                    if comp_mapping and comp_mapping.mapping_status == 'disabled':
+                        errors.append(_("Product mapping for pack component '%s' is disabled.") % comp_prod.display_name)
+                        continue
+                    comp_factor = comp_mapping.mintsoft_uom_factor if (comp_mapping and comp_mapping.mintsoft_uom_factor > 0) else 1.0
+                    comp_final_float = float(comp_qty or 0.0) * comp_factor
+                    if not math.isclose(comp_final_float, round(comp_final_float), rel_tol=1e-5, abs_tol=1e-5):
+                        errors.append(
+                            _("Pack component '%(prod)s' quantity %(qty)s converts to non-integer Mintsoft quantity %(mqty)s.")
+                            % {'prod': comp_prod.display_name, 'qty': comp_qty, 'mqty': comp_final_float}
+                        )
+                        continue
+                    comp_ms_qty = int(round(comp_final_float))
+                    if comp_ms_qty <= 0:
+                        continue
+                    comp_sku = resolve_product_sku(comp_prod, comp_mapping)
+                    if not comp_sku:
+                        errors.append(
+                            _("Missing SKU on pack component '%(comp)s' (from pack '%(pack)s').")
+                            % {'comp': comp_prod.display_name, 'pack': product.display_name}
+                        )
+                        continue
+                    share = float(comp_qty or 0.0) / total_leaf_qty
+                    comp_unit_price = round((line_sub * share) / comp_ms_qty, 4)
+                    comp_unit_vat = round((line_tax * share) / comp_ms_qty, 4)
+                    comp_discount = round(line_disc * share, 2)
+                    physical_items.append({
+                        'move_id': move.id,
+                        'sale_line_id': sale_line.id if sale_line else False,
+                        'product_id': comp_prod.id,
+                        'product_mapping_id': comp_mapping.id if comp_mapping else False,
+                        'SKU': comp_sku,
+                        'ProductId': comp_mapping.mintsoft_product_id if (comp_mapping and comp_mapping.mintsoft_product_id > 0) else 0,
+                        'Quantity': comp_ms_qty,
+                        'UnitPrice': comp_unit_price,
+                        'UnitPriceVat': comp_unit_vat,
+                        'Discount': comp_discount,
+                        'Details': f"{comp_prod.display_name} ({product.display_name})"[:250],
+                    })
+                continue
+
             if mapping and mapping.mapping_status == 'disabled':
                 errors.append(_("Product mapping for '%s' is disabled.") % product.display_name)
                 continue
@@ -598,7 +740,7 @@ class OrderService:
                 errors.append(_("Product '%s' has zero or negative Mintsoft quantity.") % product.display_name)
                 continue
 
-            sku = (mapping.mintsoft_sku if mapping and mapping.mintsoft_sku else (product.default_code or '')).strip()
+            sku = resolve_product_sku(product, mapping)
             if not sku:
                 errors.append(
                     _("Missing SKU on product '%s'. Configure an Internal Reference (SKU) or Kays Product Mapping.")
@@ -606,16 +748,30 @@ class OrderService:
                 )
                 continue
 
-            sale_line = move.sale_line_id
-            unit_price_ex_vat = round(float(sale_line.price_unit or 0.0), 4) if sale_line else round(float(product.lst_price or 0.0), 4)
-            unit_vat = round(float(sale_line.price_tax or 0.0) / mintsoft_qty, 4) if (sale_line and mintsoft_qty) else 0.0
-            line_discount = round(
-                float(sale_line.price_unit or 0.0) * raw_qty * (float(sale_line.discount or 0.0) / 100.0), 2
-            ) if sale_line else 0.0
-
-            total_order_val += (unit_price_ex_vat * mintsoft_qty) - line_discount
-            total_items_vat += unit_vat * mintsoft_qty
-            discount_ex_vat += line_discount
+            if sale_line and sale_line.product_id.id != product.id:
+                # Move is already an exploded component of a parent pack sale_line
+                unit_price_ex_vat = round(float(product.lst_price or 0.0), 4)
+                unit_vat = 0.0
+                line_discount = 0.0
+                if sale_line.id not in seen_sale_line_ids:
+                    seen_sale_line_ids.add(sale_line.id)
+                    total_order_val += float(sale_line.price_subtotal or 0.0)
+                    total_items_vat += float(sale_line.price_tax or 0.0)
+                    discount_ex_vat += round(
+                        float(sale_line.price_unit or 0.0)
+                        * float(sale_line.product_uom_qty or 1.0)
+                        * (float(sale_line.discount or 0.0) / 100.0),
+                        2,
+                    )
+            else:
+                unit_price_ex_vat = round(float(sale_line.price_unit or 0.0), 4) if sale_line else round(float(product.lst_price or 0.0), 4)
+                unit_vat = round(float(sale_line.price_tax or 0.0) / mintsoft_qty, 4) if (sale_line and mintsoft_qty) else 0.0
+                line_discount = round(
+                    float(sale_line.price_unit or 0.0) * raw_qty * (float(sale_line.discount or 0.0) / 100.0), 2
+                ) if sale_line else 0.0
+                total_order_val += (unit_price_ex_vat * mintsoft_qty) - line_discount
+                total_items_vat += unit_vat * mintsoft_qty
+                discount_ex_vat += line_discount
 
             move_desc = getattr(move, 'name', '') or getattr(move, 'description_picking', '')
             item_dict = {
