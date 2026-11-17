@@ -408,9 +408,24 @@ class OrderService:
         elif not is_manual and not instance.enable_subscription_export:
             errors.append(_("Subscription Delivery Export is disabled on connection '%s'.") % instance.display_name)
 
-        # 3. State check
-        if picking.state in ('draft', 'cancel'):
-            errors.append(_("Delivery '%(name)s' is in state '%(state)s'. Cannot export draft or cancelled delivery.") % {'name': picking.name, 'state': picking.state})
+        # 3. State check & draft auto-confirmation
+        if picking.state == 'draft':
+            try:
+                picking.action_confirm()
+                picking.action_assign()
+                _logger.info("Auto-confirmed draft picking %s for subscription delivery export", picking.name)
+            except Exception as conf_err:
+                _logger.warning("Auto-confirming picking %s failed: %s", picking.name, conf_err)
+        elif any(m.state == 'draft' for m in picking.move_ids):
+            try:
+                draft_moves = picking.move_ids.filtered(lambda m: m.state == 'draft')
+                draft_moves._action_confirm()
+                picking.action_assign()
+            except Exception as conf_err:
+                _logger.warning("Auto-confirming draft moves for picking %s: %s", picking.name, conf_err)
+
+        if picking.state == 'cancel':
+            errors.append(_("Delivery '%(name)s' is cancelled. Cannot export cancelled delivery.") % {'name': picking.name})
         if picking.picking_type_id.code != 'outgoing':
             errors.append(_("Delivery '%(name)s' is not an outgoing delivery order.") % {'name': picking.name})
 
@@ -500,10 +515,34 @@ class OrderService:
                 courier_service_name = instance.default_mintsoft_courier_service_name or 'AUTO'
                 warnings.append(_("No explicit courier mapping found; using '%s'.") % courier_service_name)
 
-        # 8. Physical moves from picking.move_ids
+        # 8. Physical moves from picking.move_ids (fall back to sale order lines if moves are not yet assigned)
         physical_items = []
         total_order_val = 0.0
-        moves = picking.move_ids.filtered(lambda m: m.state not in ('draft', 'cancel'))
+        # Allow all moves including draft/confirmed states for newly created renewal pickings
+        moves = picking.move_ids.filtered(lambda m: m.state != 'cancel' and m.product_id)
+        # If no moves at all, fall back to sale order physical lines
+        if not moves and sale_order:
+            source_lines = sale_order.order_line.filtered(
+                lambda l: not l.display_type
+                and not getattr(l, 'is_delivery', False)
+                and l.product_id
+                and l.product_id.type != 'service'
+                and l.product_uom_qty > 0
+            )
+            # Synthesize virtual move-like dicts from sale lines
+            moves = type('FakeMoveSet', (), {
+                '__iter__': lambda self: iter([
+                    type('FakeMove', (), {
+                        'product_id': line.product_id,
+                        'product_uom_qty': line.product_uom_qty,
+                        'product_uom': getattr(line, 'product_uom_id', None) or getattr(line, 'product_uom', None) or line.product_id.uom_id,
+                        'sale_line_id': line,
+                        'name': line.name or line.product_id.name,
+                        'id': False,
+                        'state': 'assigned',
+                    })() for line in source_lines
+                ]),
+            })()
 
         for move in moves:
             product = move.product_id
@@ -1230,6 +1269,20 @@ class OrderService:
                     external_ref = f"{base_ref}-R1"[:50]
                 else:
                     external_ref = base_ref[:50]
+
+        # Pre-confirm picking if still in draft (e.g. freshly-created renewal pickings)
+        if picking.state == 'draft':
+            try:
+                picking.action_confirm()
+                picking.action_assign()
+                _logger.info("Pre-confirmed draft picking %s before subscription export", picking.name)
+            except Exception as pre_conf_err:
+                _logger.warning("Pre-confirming picking %s failed: %s", picking.name, pre_conf_err)
+        elif picking.state in ('confirmed', 'waiting'):
+            try:
+                picking.action_assign()
+            except Exception as assign_err:
+                _logger.warning("Pre-assigning picking %s failed: %s", picking.name, assign_err)
 
         val_res = self.validate_subscription_delivery(picking, instance, is_manual=is_manual, external_ref=external_ref)
         resolved = val_res['resolved']
