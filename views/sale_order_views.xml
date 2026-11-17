@@ -24,7 +24,15 @@
                         <strong>Kays Logistics is disabled for this order's company (<field name="company_id" readonly="1" class="oe_inline"/>).</strong>
                         Orders belonging to disabled companies are never exported automatically.
                     </div>
+                    <field name="is_subscription_order" invisible="1"/>
                     <div class="d-flex flex-wrap gap-2 mb-3" invisible="not kays_enabled">
+                        <button name="action_kays_create_renewal_delivery"
+                                string="Generate Renewal Delivery"
+                                type="object"
+                                class="btn btn-primary"
+                                icon="fa-truck"
+                                groups="kays_mintsoft_integration.group_kays_manager"
+                                invisible="not is_subscription_order"/>
                         <button name="action_kays_send_order"
                                 string="Send to Kays"
                                 type="object"

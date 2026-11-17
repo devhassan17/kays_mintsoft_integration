@@ -35,6 +35,19 @@ class SaleOrder(models.Model):
         string='Kays Warehouse / Delivery Notes',
         copy=False,
     )
+    is_subscription_order = fields.Boolean(
+        compute='_compute_is_subscription_order',
+        string='Is Subscription Order',
+    )
+
+    def _compute_is_subscription_order(self):
+        for order in self:
+            is_sub = bool(
+                getattr(order, 'is_subscription', False)
+                or getattr(order, 'recurring_plan_id', False)
+                or order.order_line.filtered(lambda l: getattr(l, 'recurring_invoice', False))
+            )
+            order.is_subscription_order = is_sub
 
     kays_order_ids = fields.One2many(
         'kays.mintsoft.order',
@@ -451,6 +464,123 @@ class SaleOrder(models.Model):
             'res_model': 'kays.mintsoft.order',
             'view_mode': 'list,form',
             'domain': [('sale_order_id', '=', self.id)],
+        }
+
+    def _create_subscription_renewal_picking(self, cycle_num=None):
+        """
+        Create a new outgoing stock.picking and stock.moves for this subscription sale.order,
+        representing a recurring delivery cycle (e.g. bi-weekly coffee replenishment).
+        """
+        self.ensure_one()
+        warehouse = self.warehouse_id
+        if not warehouse:
+            warehouse = self.env['stock.warehouse'].search([('company_id', '=', self.company_id.id)], limit=1)
+        if not warehouse:
+            raise UserError(_("No warehouse found for company '%s'.") % self.company_id.display_name)
+
+        picking_type = warehouse.out_type_id
+        if not picking_type:
+            raise UserError(_("No outgoing delivery picking type found for warehouse '%s'.") % warehouse.display_name)
+
+        customer_loc = (self.partner_shipping_id or self.partner_id).property_stock_customer
+        if not customer_loc:
+            customer_loc = self.env.ref('stock.stock_location_customers', raise_if_not_found=False)
+        source_loc = picking_type.default_location_src_id or warehouse.lot_stock_id
+
+        # Compute cycle number if not provided
+        existing_outgoing = self.picking_ids.filtered(
+            lambda p: p.picking_type_id.code == 'outgoing' and p.state != 'cancel'
+        )
+        if not cycle_num:
+            cycle_num = len(existing_outgoing) + 1
+
+        carrier = self.carrier_id or (existing_outgoing[:1].carrier_id if existing_outgoing else False)
+
+        picking_vals = {
+            'picking_type_id': picking_type.id,
+            'partner_id': (self.partner_shipping_id or self.partner_id).id,
+            'sale_id': self.id,
+            'origin': f"{self.name} (Renewal #{cycle_num})",
+            'company_id': self.company_id.id,
+            'location_id': source_loc.id,
+            'location_dest_id': customer_loc.id if customer_loc else picking_type.default_location_dest_id.id,
+            'carrier_id': carrier.id if carrier else False,
+        }
+        if hasattr(self, 'procurement_group_id') and self.procurement_group_id:
+            picking_vals['group_id'] = self.procurement_group_id.id
+
+        picking = self.env['stock.picking'].create(picking_vals)
+
+        # Create stock.move for each physical product line on the subscription
+        physical_lines = self.order_line.filtered(
+            lambda l: not l.display_type
+            and not getattr(l, 'is_delivery', False)
+            and l.product_id
+            and l.product_id.type != 'service'
+            and l.product_uom_qty > 0
+        )
+        if not physical_lines:
+            raise UserError(_("Subscription '%s' has no physical product lines to deliver.") % self.name)
+
+        for line in physical_lines:
+            line_uom = getattr(line, 'product_uom_id', None) or getattr(line, 'product_uom', None) or line.product_id.uom_id
+            move_vals = {
+                'name': line.name or line.product_id.name,
+                'product_id': line.product_id.id,
+                'product_uom_qty': line.product_uom_qty,
+                'product_uom': line_uom.id,
+                'picking_id': picking.id,
+                'sale_line_id': line.id,
+                'company_id': self.company_id.id,
+                'location_id': source_loc.id,
+                'location_dest_id': customer_loc.id if customer_loc else picking_type.default_location_dest_id.id,
+                'warehouse_id': warehouse.id,
+                'origin': f"{self.name} - R{cycle_num}",
+                'description_picking': line.name or line.product_id.name,
+            }
+            if hasattr(self, 'procurement_group_id') and self.procurement_group_id:
+                move_vals['group_id'] = self.procurement_group_id.id
+            self.env['stock.move'].create(move_vals)
+
+        picking.action_confirm()
+        picking.action_assign()
+        return picking
+
+    def action_kays_create_renewal_delivery(self):
+        """Manually generate the next recurring subscription delivery picking and export it to Kays."""
+        self.ensure_one()
+        instance = self.kays_instance_id or self.company_id._get_default_kays_instance(sale_order=self)
+        if not instance:
+            raise UserError(_("No Kays connection configured for this company."))
+
+        existing_pickings = self.picking_ids.filtered(
+            lambda p: p.picking_type_id.code == 'outgoing' and p.state != 'cancel'
+        )
+        paid_invoices = self.invoice_ids.filtered(
+            lambda inv: inv.move_type == 'out_invoice'
+            and inv.state == 'posted'
+            and inv.payment_state in ('in_payment', 'paid')
+        )
+        missing_count = max(len(paid_invoices) - len(existing_pickings), 1)
+
+        created_pickings = self.env['stock.picking']
+        svc = OrderService(self.env)
+        for _ in range(missing_count):
+            picking = self._create_subscription_renewal_picking()
+            created_pickings |= picking
+            try:
+                svc.export_subscription_delivery(picking, instance=instance, is_manual=True)
+            except Exception as exc:
+                _logger.warning("Manual renewal export failed for picking %s: %s", picking.name, exc)
+
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': _('Renewal Delivery Created'),
+                'message': _('Created %d delivery order(s) for subscription %s and sent to Kays.') % (len(created_pickings), self.name),
+                'type': 'success',
+            }
         }
 
 

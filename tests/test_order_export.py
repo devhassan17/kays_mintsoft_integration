@@ -351,3 +351,41 @@ class TestKaysOrderExport(KaysMintsoftTestCommon):
         self.assertEqual(picking.kays_order_id.export_status, 'sent')
         self.assertEqual(picking.kays_order_id.mintsoft_order_id, 98002)
         self.assertTrue(picking.kays_order_id.is_subscription_delivery)
+
+    @patch('requests.Session.request')
+    def test_22_subscription_renewal_picking_auto_create(self, mock_request):
+        """Test 22: Verify automatic creation and export of missing renewal pickings on subscription renewal."""
+        def side_effect(**kwargs):
+            url = kwargs.get('url', '')
+            method = kwargs.get('method', '')
+            if method == 'GET' and ('/api/Order/Search' in url or '/api/Order/GetOrderId' in url):
+                return MockHTTPResponse(200, [])
+            if method == 'PUT' and url.endswith('/api/Order'):
+                return MockHTTPResponse(200, [{
+                    'OrderId': 98003,
+                    'OrderNumber': kwargs['json']['OrderNumber'],
+                    'Success': True,
+                    'OrderStatusId': 1,
+                    'Message': 'Renewal Delivery 2 Created',
+                }])
+            return MockHTTPResponse(200, [])
+
+        mock_request.side_effect = side_effect
+        self.instance_uk.enable_auto_order_export = False
+        self.instance_uk.enable_subscription_export = True
+
+        sale_order = self._create_confirmed_sale_order(qty=1.0, confirm=True)
+        initial_pickings = sale_order.picking_ids.filtered(lambda p: p.picking_type_id.code == 'outgoing')
+        self.assertEqual(len(initial_pickings), 1)
+
+        # Call manual action to generate next recurring delivery
+        sale_order.action_kays_create_renewal_delivery()
+
+        updated_pickings = sale_order.picking_ids.filtered(lambda p: p.picking_type_id.code == 'outgoing').sorted('id')
+        self.assertEqual(len(updated_pickings), 2)
+        renewal_picking = updated_pickings[1]
+        self.assertTrue(renewal_picking.kays_order_id)
+        self.assertEqual(renewal_picking.kays_order_id.mintsoft_order_id, 98003)
+        self.assertEqual(renewal_picking.kays_order_id.subscription_cycle, 2)
+        self.assertTrue(renewal_picking.kays_order_id.is_subscription_delivery)
+        self.assertTrue(renewal_picking.kays_order_id.external_order_reference.endswith('-R2'))

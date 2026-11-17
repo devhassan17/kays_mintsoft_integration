@@ -43,7 +43,39 @@ class PaymentTransaction(models.Model):
                 svc = OrderService(self.env)
 
                 # 1. Export any subscription renewal delivery pickings
-                if instance.enable_subscription_export:
+                if instance.enable_subscription_export and order.is_subscription_order:
+                    existing_pickings = order.picking_ids.filtered(
+                        lambda p: p.picking_type_id.code == 'outgoing' and p.state != 'cancel'
+                    )
+                    paid_invoices = order.invoice_ids.filtered(
+                        lambda inv: inv.move_type == 'out_invoice'
+                        and inv.state == 'posted'
+                        and inv.payment_state in ('in_payment', 'paid')
+                    )
+                    done_txs = order.sudo().transaction_ids.filtered(lambda t: t.state == 'done') if hasattr(order, 'transaction_ids') else self.env['payment.transaction']
+                    target_cycles = max(len(paid_invoices), len(done_txs))
+                    missing_count = max(0, target_cycles - len(existing_pickings))
+                    for _ in range(missing_count):
+                        try:
+                            new_picking = order._create_subscription_renewal_picking()
+                            svc.export_subscription_delivery(new_picking, instance=instance, is_manual=False)
+                        except Exception as exc:
+                            _logger.warning("Auto-create renewal delivery failed for %s on payment: %s", order.name, exc)
+
+                    pickings = order.picking_ids.filtered(
+                        lambda p: p.picking_type_id.code == 'outgoing'
+                        and p.state not in ('draft', 'cancel')
+                        and (not p.kays_order_id or p.kays_order_id.export_status != 'sent')
+                    )
+                    for picking in pickings:
+                        try:
+                            svc.export_subscription_delivery(picking, instance=instance, is_manual=False)
+                        except Exception as exc:
+                            _logger.warning(
+                                "Payment transaction subscription export failed for picking %s (Order %s): %s",
+                                picking.name, order.name, exc
+                            )
+                elif instance.enable_subscription_export:
                     pickings = order.picking_ids.filtered(
                         lambda p: p.picking_type_id.code == 'outgoing'
                         and p.state not in ('draft', 'cancel')
