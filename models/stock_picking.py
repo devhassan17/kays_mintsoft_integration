@@ -118,7 +118,7 @@ class StockPicking(models.Model):
         if self.kays_order_id and self.kays_order_id.export_status == 'sent':
             return
         from ..services.order_service import OrderService
-        svc = OrderService(self.env.with_context(kays_skip_picking_auto_export=True))
+        svc = OrderService(self.with_context(kays_skip_picking_auto_export=True).env)
         pay_ok, _reason = svc.check_payment_eligibility(sale_order, instance)
         if pay_ok:
             try:

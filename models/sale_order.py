@@ -265,7 +265,7 @@ class SaleOrder(models.Model):
             return False
 
         # Export immediately if payment eligibility is met; otherwise create a pending kays.mintsoft.order record
-        svc = OrderService(self.env.with_context(kays_skip_picking_auto_export=True))
+        svc = OrderService(self.with_context(kays_skip_picking_auto_export=True).env)
         pay_ok, _reason = svc.check_payment_eligibility(self, instance)
         if pay_ok:
             try:
@@ -635,7 +635,7 @@ class SaleOrder(models.Model):
         count_to_create = max(missing_count, 1)
 
         created_pickings = self.env['stock.picking']
-        svc = OrderService(self.env.with_context(kays_skip_picking_auto_export=True))
+        svc = OrderService(self.with_context(kays_skip_picking_auto_export=True).env)
         for _ in range(count_to_create):
             picking = self._create_subscription_renewal_picking()
             created_pickings |= picking
