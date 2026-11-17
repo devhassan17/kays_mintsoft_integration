@@ -171,3 +171,4 @@ def resolve_product_sku(product, mapping=None):
         return tmpl.default_code.strip()
 
     return ''
+
