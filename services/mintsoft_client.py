@@ -637,21 +637,23 @@ class MintsoftClient:
 
     def _record_instance_success(self, duration_ms):
         try:
-            inst = self.instance.sudo()
-            old_avg = inst.avg_response_time_ms or duration_ms
-            new_avg = round((old_avg * 0.7) + (duration_ms * 0.3), 2)
-            inst.write({
-                'last_successful_request': fields.Datetime.now(),
-                'avg_response_time_ms': new_avg,
-            })
+            with self.env.cr.savepoint():
+                inst = self.instance.sudo()
+                old_avg = inst.avg_response_time_ms or duration_ms
+                new_avg = round((old_avg * 0.7) + (duration_ms * 0.3), 2)
+                inst.write({
+                    'last_successful_request': fields.Datetime.now(),
+                    'avg_response_time_ms': new_avg,
+                })
         except Exception as exc:
             _logger.debug("Could not update instance success metrics: %s", exc)
 
     def _record_instance_failure(self):
         try:
-            self.instance.sudo().write({
-                'last_failed_request': fields.Datetime.now(),
-            })
+            with self.env.cr.savepoint():
+                self.instance.sudo().write({
+                    'last_failed_request': fields.Datetime.now(),
+                })
         except Exception as exc:
             _logger.debug("Could not update instance failure metrics: %s", exc)
 
@@ -676,37 +678,38 @@ class MintsoftClient:
     ):
         """Record a sanitized API log entry in kays.mintsoft.log."""
         try:
-            is_debug = bool(self.instance.enable_debug_logging)
-            # Always mask PII in normal logs; keep sanitized structure in debug logs
-            sanitized_req = sanitize_payload(request_payload, mask_pii=not is_debug)
-            sanitized_resp = sanitize_payload(response_payload, mask_pii=not is_debug)
+            with self.env.cr.savepoint():
+                is_debug = bool(self.instance.enable_debug_logging)
+                # Always mask PII in normal logs; keep sanitized structure in debug logs
+                sanitized_req = sanitize_payload(request_payload, mask_pii=not is_debug)
+                sanitized_resp = sanitize_payload(response_payload, mask_pii=not is_debug)
 
-            req_str = json.dumps(sanitized_req, indent=2, default=str)[:8000] if sanitized_req else ''
-            resp_str = json.dumps(sanitized_resp, indent=2, default=str)[:8000] if sanitized_resp else ''
+                req_str = json.dumps(sanitized_req, indent=2, default=str)[:8000] if sanitized_req else ''
+                resp_str = json.dumps(sanitized_resp, indent=2, default=str)[:8000] if sanitized_resp else ''
 
-            self.env['kays.mintsoft.log'].sudo().create({
-                'timestamp': fields.Datetime.now(),
-                'company_id': self.instance.company_id.id,
-                'instance_id': self.instance.id,
-                'environment': self.instance.environment,
-                'operation': operation,
-                'http_method': http_method,
-                'endpoint': endpoint,
-                'http_status': http_status,
-                'duration_ms': duration_ms,
-                'sale_order_id': sale_order.id if sale_order else (kays_order.sale_order_id.id if kays_order else False),
-                'kays_order_id': kays_order.id if kays_order else False,
-                'mintsoft_order_id': mintsoft_order_id or (kays_order.mintsoft_order_id if kays_order else 0),
-                'sync_job_id': sync_job.id if sync_job else False,
-                'status': status,
-                'is_debug': is_debug and status == 'success',
-                'error_code': error_code or '',
-                'retry_count': retry_count,
-                'correlation_id': correlation_id,
-                'request_summary': req_str,
-                'response_summary': resp_str,
-                'error_message': sanitize_payload(error_message) or '',
-            })
+                self.env['kays.mintsoft.log'].sudo().create({
+                    'timestamp': fields.Datetime.now(),
+                    'company_id': self.instance.company_id.id,
+                    'instance_id': self.instance.id,
+                    'environment': self.instance.environment,
+                    'operation': operation,
+                    'http_method': http_method,
+                    'endpoint': endpoint,
+                    'http_status': http_status,
+                    'duration_ms': duration_ms,
+                    'sale_order_id': sale_order.id if sale_order else (kays_order.sale_order_id.id if kays_order else False),
+                    'kays_order_id': kays_order.id if kays_order else False,
+                    'mintsoft_order_id': mintsoft_order_id or (kays_order.mintsoft_order_id if kays_order else 0),
+                    'sync_job_id': sync_job.id if sync_job else False,
+                    'status': status,
+                    'is_debug': is_debug and status == 'success',
+                    'error_code': error_code or '',
+                    'retry_count': retry_count,
+                    'correlation_id': correlation_id,
+                    'request_summary': req_str,
+                    'response_summary': resp_str,
+                    'error_message': sanitize_payload(error_message) or '',
+                })
         except Exception as log_exc:
             _logger.warning("Failed to write kays.mintsoft.log record: %s", log_exc)
 

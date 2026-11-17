@@ -91,16 +91,26 @@ class StockPicking(models.Model):
 
     def action_confirm(self):
         res = super().action_confirm()
+        if self.env.context.get('kays_skip_picking_auto_export'):
+            return res
         for picking in self:
             picking._kays_check_auto_export_delivery()
         return res
 
     def _kays_check_auto_export_delivery(self):
         self.ensure_one()
+        if self.env.context.get('kays_skip_picking_auto_export'):
+            return
         if self.picking_type_id.code != 'outgoing':
             return
+        if not self.move_ids or self.state in ('draft', 'cancel'):
+            return
         sale_order = self.sale_id
-        if not sale_order or not sale_order.company_id.kays_enabled:
+        if not sale_order or sale_order.state != 'sale' or not sale_order.company_id.kays_enabled:
+            return
+        # Only auto-export from picking confirmation if the initial order was already exported to Kays
+        # (initial order confirmation is handled by SaleOrder._kays_trigger_auto_export_on_confirm)
+        if not sale_order.kays_order_ids.filtered(lambda o: o.export_status == 'sent'):
             return
         instance = sale_order.kays_instance_id or sale_order.company_id._get_default_kays_instance(sale_order=sale_order)
         if not instance or not instance.active or not instance.enable_integration or not instance.enable_subscription_export:
@@ -108,11 +118,16 @@ class StockPicking(models.Model):
         if self.kays_order_id and self.kays_order_id.export_status == 'sent':
             return
         from ..services.order_service import OrderService
-        svc = OrderService(self.env)
+        svc = OrderService(self.env.with_context(kays_skip_picking_auto_export=True))
         pay_ok, _reason = svc.check_payment_eligibility(sale_order, instance)
         if pay_ok:
             try:
-                svc.export_subscription_delivery(self, instance=instance, is_manual=False)
+                with self.env.cr.savepoint():
+                    svc.export_subscription_delivery(
+                        self.with_context(kays_skip_picking_auto_export=True),
+                        instance=instance,
+                        is_manual=False,
+                    )
             except Exception as exc:
                 _logger.warning("Auto-export of delivery %s to Kays skipped/failed: %s", self.name, exc)
 

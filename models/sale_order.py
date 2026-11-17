@@ -265,38 +265,45 @@ class SaleOrder(models.Model):
             return False
 
         # Export immediately if payment eligibility is met; otherwise create a pending kays.mintsoft.order record
-        svc = OrderService(self.env)
+        svc = OrderService(self.env.with_context(kays_skip_picking_auto_export=True))
         pay_ok, _reason = svc.check_payment_eligibility(self, instance)
         if pay_ok:
             try:
-                svc.export_sale_order(self, instance=instance, is_manual=False)
+                with self.env.cr.savepoint():
+                    svc.export_sale_order(self, instance=instance, is_manual=False)
             except Exception as exc:
                 _logger.warning("Auto-export on confirm for %s encountered error: %s", self.name, exc)
         else:
+            ext_ref = svc.compute_external_reference(self, instance)
+            idemp_key = f"{instance.id}:{ext_ref}"
             existing = self.env['kays.mintsoft.order'].search([
-                ('sale_order_id', '=', self.id),
+                '|',
+                '&', ('sale_order_id', '=', self.id), ('is_split_order', '=', False),
+                ('idempotency_key', '=', idemp_key),
                 ('instance_id', '=', instance.id),
-                ('is_split_order', '=', False),
             ], limit=1)
             if not existing:
-                ext_ref = svc.compute_external_reference(self, instance)
-                self.env['kays.mintsoft.order'].create({
-                    'name': ext_ref,
-                    'external_order_reference': ext_ref,
-                    'idempotency_key': f"{instance.id}:{ext_ref}",
-                    'sale_order_id': self.id,
-                    'company_id': self.company_id.id,
-                    'instance_id': instance.id,
-                    'partner_id': self.partner_id.id,
-                    'shipping_partner_id': (self.partner_shipping_id or self.partner_id).id,
-                    'order_date': self.date_order or fields.Datetime.now(),
-                    'currency_id': self.currency_id.id,
-                    'order_total': self.amount_total,
-                    'export_status': 'pending',
-                    'fulfilment_status': 'awaiting_confirmation',
-                    'mintsoft_client_id': instance.mintsoft_client_id,
-                    'mintsoft_warehouse_id': instance.mintsoft_warehouse_id,
-                })
+                try:
+                    with self.env.cr.savepoint():
+                        self.env['kays.mintsoft.order'].create({
+                            'name': ext_ref,
+                            'external_order_reference': ext_ref,
+                            'idempotency_key': idemp_key,
+                            'sale_order_id': self.id,
+                            'company_id': self.company_id.id,
+                            'instance_id': instance.id,
+                            'partner_id': self.partner_id.id,
+                            'shipping_partner_id': (self.partner_shipping_id or self.partner_id).id,
+                            'order_date': self.date_order or fields.Datetime.now(),
+                            'currency_id': self.currency_id.id,
+                            'order_total': self.amount_total,
+                            'export_status': 'pending',
+                            'fulfilment_status': 'awaiting_confirmation',
+                            'mintsoft_client_id': instance.mintsoft_client_id,
+                            'mintsoft_warehouse_id': instance.mintsoft_warehouse_id,
+                        })
+                except Exception as create_exc:
+                    _logger.warning("Could not create pending Kays order for %s: %s", self.name, create_exc)
         return True
 
     # -------------------------------------------------------------------------
@@ -466,6 +473,102 @@ class SaleOrder(models.Model):
             'domain': [('sale_order_id', '=', self.id)],
         }
 
+    def _get_subscription_cycle_counts(self):
+        """
+        Return (existing_cycles, target_cycles, missing_count) for this subscription order.
+        Accounts for multi-step warehouses where the initial cycle may be a PICK transfer
+        or a primary kays.mintsoft.order rather than an outgoing picking.
+        """
+        self.ensure_one()
+        non_cancel_pickings = self.picking_ids.filtered(lambda p: p.state != 'cancel')
+        initial_pickings = non_cancel_pickings.filtered(lambda p: 'Renewal #' not in (p.origin or ''))
+        renewal_pickings = non_cancel_pickings.filtered(lambda p: 'Renewal #' in (p.origin or ''))
+        has_initial_cycle = bool(
+            initial_pickings
+            or self.kays_order_ids.filtered(lambda o: not o.is_subscription_delivery)
+        )
+        existing_cycles = (1 if has_initial_cycle else 0) + len(renewal_pickings)
+
+        paid_invoices = self.invoice_ids.filtered(
+            lambda inv: inv.move_type == 'out_invoice'
+            and inv.state == 'posted'
+            and inv.payment_state in ('in_payment', 'paid')
+        )
+        done_txs = (
+            self.sudo().transaction_ids.filtered(lambda t: t.state == 'done')
+            if hasattr(self, 'transaction_ids')
+            else self.env['payment.transaction']
+        )
+        target_cycles = max(len(paid_invoices), len(done_txs))
+        missing_count = max(0, target_cycles - existing_cycles)
+        return existing_cycles, target_cycles, missing_count
+
+    def _ensure_picking_has_moves(self, picking, cycle_num=None):
+        """
+        Ensure an outgoing subscription renewal picking has stock.move lines and is confirmed.
+        Safely filters field names against Odoo 19 stock.move._fields and confirms with merge=False
+        so Odoo never merges or deletes renewal moves into earlier pickings.
+        """
+        self.ensure_one()
+        warehouse = picking.picking_type_id.warehouse_id or self.warehouse_id
+        if not warehouse:
+            warehouse = self.env['stock.warehouse'].search([('company_id', '=', self.company_id.id)], limit=1)
+        picking_type = picking.picking_type_id or (warehouse.out_type_id if warehouse else False)
+        source_loc = picking.location_id or (picking_type.default_location_src_id if picking_type else warehouse.lot_stock_id)
+        customer_loc = picking.location_dest_id or (self.partner_shipping_id or self.partner_id).property_stock_customer
+        if not customer_loc and picking_type:
+            customer_loc = picking_type.default_location_dest_id
+
+        if not picking.move_ids.filtered(lambda m: m.state != 'cancel'):
+            physical_lines = self.order_line.filtered(
+                lambda l: not l.display_type
+                and not getattr(l, 'is_delivery', False)
+                and l.product_id
+                and l.product_id.type != 'service'
+                and l.product_uom_qty > 0
+            )
+            move_fields = self.env['stock.move']._fields
+            for line in physical_lines:
+                line_uom = (
+                    getattr(line, 'product_uom_id', None)
+                    or getattr(line, 'product_uom', None)
+                    or line.product_id.uom_id
+                )
+                raw_move_vals = {
+                    'name': line.name or line.product_id.display_name,
+                    'product_id': line.product_id.id,
+                    'product_uom_qty': line.product_uom_qty,
+                    'product_uom': line_uom.id,
+                    'product_uom_id': line_uom.id,
+                    'picking_id': picking.id,
+                    'picking_type_id': picking_type.id if picking_type else False,
+                    'sale_line_id': line.id,
+                    'company_id': self.company_id.id,
+                    'location_id': source_loc.id,
+                    'location_dest_id': customer_loc.id,
+                    'origin': picking.origin or f"{self.name} - R{cycle_num or 2}",
+                    'description_picking': line.name or line.product_id.display_name,
+                    'procure_method': 'make_to_stock',
+                }
+                move_vals = {k: v for k, v in raw_move_vals.items() if k in move_fields and v is not False}
+                self.env['stock.move'].with_context(kays_skip_picking_auto_export=True).create(move_vals)
+
+        draft_moves = picking.move_ids.filtered(lambda m: m.state == 'draft')
+        if draft_moves:
+            try:
+                with self.env.cr.savepoint():
+                    draft_moves.with_context(kays_skip_picking_auto_export=True)._action_confirm(merge=False)
+            except Exception as conf_err:
+                _logger.warning("Confirming renewal moves (merge=False) on %s failed: %s", picking.name, conf_err)
+
+        if picking.state in ('confirmed', 'waiting'):
+            try:
+                with self.env.cr.savepoint():
+                    picking.with_context(kays_skip_picking_auto_export=True).action_assign()
+            except Exception as assign_err:
+                _logger.warning("Assigning renewal picking %s failed: %s", picking.name, assign_err)
+        return picking
+
     def _create_subscription_renewal_picking(self, cycle_num=None):
         """
         Create a new outgoing stock.picking and stock.moves for this subscription sale.order,
@@ -487,16 +590,15 @@ class SaleOrder(models.Model):
             customer_loc = self.env.ref('stock.stock_location_customers', raise_if_not_found=False)
         source_loc = picking_type.default_location_src_id or warehouse.lot_stock_id
 
-        # Compute cycle number if not provided
-        existing_outgoing = self.picking_ids.filtered(
-            lambda p: p.picking_type_id.code == 'outgoing' and p.state != 'cancel'
-        )
         if not cycle_num:
-            cycle_num = len(existing_outgoing) + 1
+            existing_cycles, _target, _missing = self._get_subscription_cycle_counts()
+            cycle_num = max(existing_cycles + 1, 2)
 
-        carrier = self.carrier_id or (existing_outgoing[:1].carrier_id if existing_outgoing else False)
+        existing_pickings = self.picking_ids.filtered(lambda p: p.state != 'cancel')
+        carrier = self.carrier_id or (existing_pickings[:1].carrier_id if existing_pickings else False)
 
-        picking_vals = {
+        picking_fields = self.env['stock.picking']._fields
+        raw_picking_vals = {
             'picking_type_id': picking_type.id,
             'partner_id': (self.partner_shipping_id or self.partner_id).id,
             'sale_id': self.id,
@@ -506,12 +608,9 @@ class SaleOrder(models.Model):
             'location_dest_id': customer_loc.id if customer_loc else picking_type.default_location_dest_id.id,
             'carrier_id': carrier.id if carrier else False,
         }
-        if hasattr(self, 'procurement_group_id') and self.procurement_group_id:
-            picking_vals['group_id'] = self.procurement_group_id.id
+        picking_vals = {k: v for k, v in raw_picking_vals.items() if k in picking_fields}
+        picking = self.env['stock.picking'].with_context(kays_skip_picking_auto_export=True).create(picking_vals)
 
-        picking = self.env['stock.picking'].create(picking_vals)
-
-        # Create stock.move for each physical product line on the subscription
         physical_lines = self.order_line.filtered(
             lambda l: not l.display_type
             and not getattr(l, 'is_delivery', False)
@@ -522,28 +621,7 @@ class SaleOrder(models.Model):
         if not physical_lines:
             raise UserError(_("Subscription '%s' has no physical product lines to deliver.") % self.name)
 
-        for line in physical_lines:
-            line_uom = getattr(line, 'product_uom_id', None) or getattr(line, 'product_uom', None) or line.product_id.uom_id
-            move_vals = {
-                'name': line.name or line.product_id.name,
-                'product_id': line.product_id.id,
-                'product_uom_qty': line.product_uom_qty,
-                'product_uom': line_uom.id,
-                'picking_id': picking.id,
-                'sale_line_id': line.id,
-                'company_id': self.company_id.id,
-                'location_id': source_loc.id,
-                'location_dest_id': customer_loc.id if customer_loc else picking_type.default_location_dest_id.id,
-                'warehouse_id': warehouse.id,
-                'origin': f"{self.name} - R{cycle_num}",
-                'description_picking': line.name or line.product_id.name,
-            }
-            if hasattr(self, 'procurement_group_id') and self.procurement_group_id:
-                move_vals['group_id'] = self.procurement_group_id.id
-            self.env['stock.move'].create(move_vals)
-
-        picking.action_confirm()
-        picking.action_assign()
+        self._ensure_picking_has_moves(picking, cycle_num=cycle_num)
         return picking
 
     def action_kays_create_renewal_delivery(self):
@@ -553,23 +631,17 @@ class SaleOrder(models.Model):
         if not instance:
             raise UserError(_("No Kays connection configured for this company."))
 
-        existing_pickings = self.picking_ids.filtered(
-            lambda p: p.picking_type_id.code == 'outgoing' and p.state != 'cancel'
-        )
-        paid_invoices = self.invoice_ids.filtered(
-            lambda inv: inv.move_type == 'out_invoice'
-            and inv.state == 'posted'
-            and inv.payment_state in ('in_payment', 'paid')
-        )
-        missing_count = max(len(paid_invoices) - len(existing_pickings), 1)
+        _existing_cycles, _target_cycles, missing_count = self._get_subscription_cycle_counts()
+        count_to_create = max(missing_count, 1)
 
         created_pickings = self.env['stock.picking']
-        svc = OrderService(self.env)
-        for _ in range(missing_count):
+        svc = OrderService(self.env.with_context(kays_skip_picking_auto_export=True))
+        for _ in range(count_to_create):
             picking = self._create_subscription_renewal_picking()
             created_pickings |= picking
             try:
-                svc.export_subscription_delivery(picking, instance=instance, is_manual=True)
+                with self.env.cr.savepoint():
+                    svc.export_subscription_delivery(picking, instance=instance, is_manual=True)
             except Exception as exc:
                 _logger.warning("Manual renewal export failed for picking %s: %s", picking.name, exc)
 

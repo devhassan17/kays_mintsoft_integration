@@ -408,21 +408,13 @@ class OrderService:
         elif not is_manual and not instance.enable_subscription_export:
             errors.append(_("Subscription Delivery Export is disabled on connection '%s'.") % instance.display_name)
 
-        # 3. State check & draft auto-confirmation
-        if picking.state == 'draft':
+        # 3. State check & draft/moves auto-preparation
+        if hasattr(sale_order, '_ensure_picking_has_moves'):
             try:
-                picking.action_confirm()
-                picking.action_assign()
-                _logger.info("Auto-confirmed draft picking %s for subscription delivery export", picking.name)
+                with self.env.cr.savepoint():
+                    sale_order._ensure_picking_has_moves(picking)
             except Exception as conf_err:
-                _logger.warning("Auto-confirming picking %s failed: %s", picking.name, conf_err)
-        elif any(m.state == 'draft' for m in picking.move_ids):
-            try:
-                draft_moves = picking.move_ids.filtered(lambda m: m.state == 'draft')
-                draft_moves._action_confirm()
-                picking.action_assign()
-            except Exception as conf_err:
-                _logger.warning("Auto-confirming draft moves for picking %s: %s", picking.name, conf_err)
+                _logger.warning("Auto-preparing renewal picking %s failed: %s", picking.name, conf_err)
 
         if picking.state == 'cancel':
             errors.append(_("Delivery '%(name)s' is cancelled. Cannot export cancelled delivery.") % {'name': picking.name})
@@ -553,7 +545,7 @@ class OrderService:
             if raw_qty <= 0:
                 continue
 
-            line_uom = move.product_uom
+            line_uom = getattr(move, 'product_uom', None) or getattr(move, 'product_uom_id', None) or product.uom_id
             base_uom = product.uom_id
             try:
                 if line_uom and base_uom and line_uom != base_uom:
@@ -609,6 +601,7 @@ class OrderService:
 
             total_order_val += unit_price_ex_vat * mintsoft_qty
 
+            move_desc = getattr(move, 'name', '') or getattr(move, 'description_picking', '')
             item_dict = {
                 'move_id': move.id,
                 'sale_line_id': sale_line.id if sale_line else False,
@@ -620,7 +613,7 @@ class OrderService:
                 'UnitPrice': unit_price_ex_vat,
                 'UnitPriceVat': unit_vat,
                 'Discount': line_discount,
-                'Details': (sale_line.name or move.name or product.name or sku)[:250] if sale_line else (product.name or sku)[:250],
+                'Details': (sale_line.name or move_desc or product.name or sku)[:250] if sale_line else (move_desc or product.name or sku)[:250],
             }
             physical_items.append(item_dict)
 
@@ -901,10 +894,12 @@ class OrderService:
 
         # Acquire row-level lock on sale_order to prevent concurrent duplicate exports
         try:
-            self.env.cr.execute(
-                "SELECT id FROM sale_order WHERE id = %s FOR UPDATE NOWAIT",
-                [sale_order.id],
-            )
+            sale_order.flush_recordset(['id'])
+            with self.env.cr.savepoint():
+                self.env.cr.execute(
+                    "SELECT id FROM sale_order WHERE id = %s FOR UPDATE NOWAIT",
+                    [sale_order.id],
+                )
         except Exception as lock_exc:
             raise UserError(
                 _("Order '%s' is currently being processed by another synchronization worker.") % sale_order.name
@@ -915,6 +910,7 @@ class OrderService:
             ('sale_order_id', '=', sale_order.id),
             ('instance_id', '=', instance.id),
             ('is_split_order', '=', False),
+            ('is_subscription_delivery', '=', False),
         ], limit=1)
 
         if existing_kays_orders:
@@ -942,6 +938,10 @@ class OrderService:
         external_ref = resolved['external_reference']
 
         # Ensure or create the kays.mintsoft.order record
+        if not existing_kays_orders:
+            existing_kays_orders = self.env['kays.mintsoft.order'].search([
+                ('idempotency_key', '=', f"{instance.id}:{external_ref}"),
+            ], limit=1)
         if existing_kays_orders:
             kays_order = existing_kays_orders[0]
             kays_order.write({
@@ -1216,10 +1216,12 @@ class OrderService:
 
         # Row-level lock on picking
         try:
-            self.env.cr.execute(
-                "SELECT id FROM stock_picking WHERE id = %s FOR UPDATE NOWAIT",
-                [picking.id],
-            )
+            picking.flush_recordset(['id'])
+            with self.env.cr.savepoint():
+                self.env.cr.execute(
+                    "SELECT id FROM stock_picking WHERE id = %s FOR UPDATE NOWAIT",
+                    [picking.id],
+                )
         except Exception as lock_exc:
             raise UserError(
                 _("Delivery '%s' is currently being processed by another worker.") % picking.name
@@ -1245,13 +1247,22 @@ class OrderService:
                     return kays_order
 
         # Calculate cycle number and external reference
-        outgoing_pickings = sale_order.picking_ids.filtered(
-            lambda p: p.picking_type_id.code == 'outgoing' and p.state != 'cancel'
-        ).sorted('id')
-        try:
-            cycle_num = list(outgoing_pickings.ids).index(picking.id) + 1
-        except ValueError:
-            cycle_num = len(outgoing_pickings) or 1
+        origin_str = picking.origin or ''
+        cycle_num = 0
+        if 'Renewal #' in origin_str:
+            try:
+                cycle_num = int(origin_str.split('Renewal #')[1].split(')')[0].strip())
+            except (ValueError, IndexError):
+                cycle_num = 0
+
+        if not cycle_num:
+            outgoing_pickings = sale_order.picking_ids.filtered(
+                lambda p: p.picking_type_id.code == 'outgoing' and p.state != 'cancel'
+            ).sorted('id')
+            try:
+                cycle_num = list(outgoing_pickings.ids).index(picking.id) + 1
+            except ValueError:
+                cycle_num = len(outgoing_pickings) or 1
 
         base_ref = self.compute_external_reference(sale_order, instance)
         if kays_order and kays_order.external_order_reference:
@@ -1270,19 +1281,18 @@ class OrderService:
                 else:
                     external_ref = base_ref[:50]
 
-        # Pre-confirm picking if still in draft (e.g. freshly-created renewal pickings)
-        if picking.state == 'draft':
+        if not kays_order:
+            kays_order = self.env['kays.mintsoft.order'].search([
+                ('idempotency_key', '=', f"{instance.id}:{external_ref}"),
+            ], limit=1)
+
+        # Ensure renewal picking has moves and is confirmed (without triggering recursion)
+        if hasattr(sale_order, '_ensure_picking_has_moves'):
             try:
-                picking.action_confirm()
-                picking.action_assign()
-                _logger.info("Pre-confirmed draft picking %s before subscription export", picking.name)
+                with self.env.cr.savepoint():
+                    sale_order._ensure_picking_has_moves(picking, cycle_num=cycle_num)
             except Exception as pre_conf_err:
-                _logger.warning("Pre-confirming picking %s failed: %s", picking.name, pre_conf_err)
-        elif picking.state in ('confirmed', 'waiting'):
-            try:
-                picking.action_assign()
-            except Exception as assign_err:
-                _logger.warning("Pre-assigning picking %s failed: %s", picking.name, assign_err)
+                _logger.warning("Pre-preparing picking %s failed: %s", picking.name, pre_conf_err)
 
         val_res = self.validate_subscription_delivery(picking, instance, is_manual=is_manual, external_ref=external_ref)
         resolved = val_res['resolved']

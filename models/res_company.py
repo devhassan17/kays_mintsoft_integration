@@ -72,9 +72,10 @@ class ResCompany(models.Model):
                 dom_str = (inst.routing_domain or '').strip()
                 if dom_str and dom_str != '[]':
                     try:
-                        dom = safe_eval(dom_str)
-                        if isinstance(dom, list) and sale_order.filtered_domain(dom):
-                            matched_by_domain |= inst
+                        with self.env.cr.savepoint():
+                            dom = safe_eval(dom_str)
+                            if isinstance(dom, list) and sale_order.filtered_domain(dom):
+                                matched_by_domain |= inst
                     except Exception:
                         continue
             if len(matched_by_domain) == 1:
